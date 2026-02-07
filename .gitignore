@@ -1,12 +1,18 @@
-# Secrets
-.streamlit/secrets.toml
-app/.streamlit/secrets.toml
-client_secret.json
-client_secret.json.json
+# Streamlit secrets
+.streamlit/
+app/.streamlit/
 
-# Python
+# Environment files
+.env
+*.env
+
+# OAuth / credentials
+client_secret.json
+*.json
+
+# Python cache
 __pycache__/
 *.pyc
 
-# Env
-.env
+# Virtual env
+venv/
