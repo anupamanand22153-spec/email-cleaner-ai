@@ -1,0 +1,12 @@
+# Streamlit secrets
+.streamlit/
+app/.streamlit/
+
+# Google OAuth
+client_secret.json
+client_secret.json.json
+
+# Python
+__pycache__/
+*.pyc
+.env
