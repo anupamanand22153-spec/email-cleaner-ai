@@ -30,6 +30,7 @@ def get_google_auth_flow():
         client_config=client_config,
         scopes=scopes,
         redirect_uri=st.secrets["google"]["redirect_uri"],
+        autogenerate_code_verifier=False,
     )
 
     return flow
