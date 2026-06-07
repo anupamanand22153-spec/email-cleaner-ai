@@ -15,7 +15,9 @@ if PROJECT_ROOT not in sys.path:
 # =================================================
 # Imports
 # =================================================
+import requests as req_lib
 import streamlit as st
+from google.oauth2.credentials import Credentials
 
 from app.auth.google_auth import get_google_auth_flow
 from app.gmail2.gmail_service import (
@@ -57,26 +59,33 @@ if (
     st.session_state.token_fetched = True
 
     try:
-        flow = get_google_auth_flow()
+        # Call Google's token endpoint directly to avoid any
+        # library-level encoding or redirect_uri issues
+        token_resp = req_lib.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": query_params["code"],
+                "client_id": st.secrets["google"]["client_id"],
+                "client_secret": st.secrets["google"]["client_secret"],
+                "redirect_uri": st.secrets["google"]["redirect_uri"],
+                "grant_type": "authorization_code",
+            },
+        )
+        token_data = token_resp.json()
 
-        # Match the state Google returned so requests_oauthlib
-        # does not raise MismatchingStateError on fresh sessions
-        if "state" in query_params:
-            flow.oauth2session._state = query_params["state"]
+        if "error" in token_data:
+            raise ValueError(f"Google token error: {token_data}")
 
-        redirect_uri = st.secrets["google"]["redirect_uri"]
-
-        # Build the full authorization response URL so that
-        # redirect_uri is sent correctly to Google's token endpoint
-        auth_response = (
-            redirect_uri
-            + "?"
-            + urllib.parse.urlencode(dict(query_params))
+        credentials = Credentials(
+            token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=st.secrets["google"]["client_id"],
+            client_secret=st.secrets["google"]["client_secret"],
+            scopes=token_data.get("scope", "").split(),
         )
 
-        flow.fetch_token(authorization_response=auth_response)
-
-        st.session_state.credentials = flow.credentials
+        st.session_state.credentials = credentials
         st.session_state.authenticated = True
         st.query_params.clear()
         st.rerun()
@@ -84,9 +93,6 @@ if (
     except Exception as e:
         st.session_state.token_fetched = False
         st.error(f"Authentication failed: {type(e).__name__}: {str(e)}")
-        st.write("**Redirect URI used:**", st.secrets["google"]["redirect_uri"])
-        st.write("**Query params received:**", dict(query_params))
-        st.exception(e)
         st.stop()
 
 # =================================================
