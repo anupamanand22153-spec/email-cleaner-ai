@@ -83,7 +83,10 @@ if (
 
     except Exception as e:
         st.session_state.token_fetched = False
-        st.error(f"Authentication failed ({type(e).__name__}). Please try signing in again.")
+        st.error(f"Authentication failed: {type(e).__name__}: {str(e)}")
+        st.write("**Redirect URI used:**", st.secrets["google"]["redirect_uri"])
+        st.write("**Query params received:**", dict(query_params))
+        st.exception(e)
         st.stop()
 
 # =================================================
