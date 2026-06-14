@@ -90,7 +90,7 @@ if "code" in query_params and not st.session_state.authenticated and not st.sess
 if not st.session_state.authenticated:
 
     flow = get_google_auth_flow()
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
 
     st.markdown(f"""
 <style>
@@ -332,10 +332,19 @@ if DB_AVAILABLE and not st.session_state.user_saved:
 # ── Load & cache emails ──────────────────────────────────────────────
 def load_emails():
     if "cached_classified" not in st.session_state:
-        service = get_gmail_service(st.session_state.credentials)
-        with st.spinner("Loading your inbox..."):
-            emails = fetch_email_metadata(service, max_results=100)
-        st.session_state.cached_classified = [(e, classify_email(e)) for e in emails]
+        try:
+            service = get_gmail_service(st.session_state.credentials)
+            with st.spinner("Loading your inbox..."):
+                emails = fetch_email_metadata(service, max_results=100)
+            st.session_state.cached_classified = [(e, classify_email(e)) for e in emails]
+        except Exception as e:
+            st.error("Could not load your emails. This usually means Gmail access was not granted during sign-in.")
+            st.info("Please sign out below and sign in again — make sure to click **Allow** on all permissions.")
+            if st.button("Sign Out and Try Again"):
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+            st.stop()
     return st.session_state.cached_classified
 
 # ── Sidebar navigation ───────────────────────────────────────────────
