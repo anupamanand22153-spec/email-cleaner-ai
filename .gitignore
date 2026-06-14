@@ -1,0 +1,18 @@
+# Streamlit secrets
+.streamlit/
+app/.streamlit/
+
+# Environment files
+.env
+*.env
+
+# OAuth / credentials
+client_secret.json
+*.json
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/

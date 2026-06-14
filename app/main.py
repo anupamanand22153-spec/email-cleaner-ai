@@ -26,6 +26,14 @@ from app.gmail2.gmail_service import (
 )
 from app.logic.email_classifier import classify_email
 
+try:
+    from app.database.user_repository import save_user
+    DB_AVAILABLE = True
+except Exception as import_err:
+    DB_AVAILABLE = False
+    save_user = None
+    _DB_ERROR = str(import_err)
+
 # =================================================
 # Page config
 # =================================================
@@ -45,6 +53,9 @@ if "credentials" not in st.session_state:
 
 if "token_fetched" not in st.session_state:
     st.session_state.token_fetched = False
+
+if "user_saved" not in st.session_state:
+    st.session_state.user_saved = True  # True means no save needed
 
 # =================================================
 # OAuth Callback Handler
@@ -85,8 +96,18 @@ if (
             scopes=token_data.get("scope", "").split(),
         )
 
+        # Fetch real name and email from Google
+        userinfo_resp = req_lib.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {token_data['access_token']}"},
+        )
+        userinfo = userinfo_resp.json()
+
         st.session_state.credentials = credentials
+        st.session_state.user_email = userinfo.get("email", "")
+        st.session_state.user_name = userinfo.get("name", "")
         st.session_state.authenticated = True
+        st.session_state.user_saved = False  # flag to save after rerun
         st.query_params.clear()
         st.rerun()
 
@@ -135,7 +156,34 @@ if not st.session_state.authenticated:
 # =================================================
 # Logged In State
 # =================================================
-st.success("✅ Logged in successfully")
+user_name = st.session_state.get("user_name", "")
+user_email = st.session_state.get("user_email", "")
+st.success(f"✅ Logged in as {user_name} ({user_email})")
+
+# Show database status
+if not DB_AVAILABLE:
+    st.error(f"❌ Database module failed to load: {_DB_ERROR}")
+else:
+    st.write("✅ Database module loaded")
+
+    # Save user on first login
+    if not st.session_state.user_saved:
+        try:
+            result = save_user(email=user_email, full_name=user_name, provider="google")
+            st.session_state.user_saved = True
+            st.info(f"✅ Saved to database: {result}")
+        except Exception as db_error:
+            st.error(f"⚠️ Database save failed: {db_error}")
+            st.exception(db_error)
+
+    # Test button
+    if st.button("🔧 Test DB Save Now"):
+        try:
+            result = save_user(email=user_email or "manual@test.com", full_name=user_name or "Manual Test", provider="google")
+            st.success(f"✅ DB Save worked: {result}")
+        except Exception as e:
+            st.error(f"❌ DB Save failed: {e}")
+            st.exception(e)
 
 service = get_gmail_service(st.session_state.credentials)
 emails = fetch_email_metadata(service, max_results=20)
