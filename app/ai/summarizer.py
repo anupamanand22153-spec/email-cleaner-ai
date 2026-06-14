@@ -37,7 +37,7 @@ Return ONLY valid JSON, no explanation. Example:
 
     try:
         resp = _client().chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.3,
@@ -86,7 +86,7 @@ Rules:
 
     try:
         resp = _client().chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=350,
             temperature=0.5,
