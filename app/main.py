@@ -15,11 +15,12 @@ from app.gmail2.gmail_service import get_gmail_service, fetch_email_metadata
 from app.logic.email_classifier import classify_email
 
 try:
-    from app.database.user_repository import save_user
+    from app.database.user_repository import save_user, save_waitlist
     DB_AVAILABLE = True
 except Exception:
     DB_AVAILABLE = False
     save_user = None
+    save_waitlist = None
 
 try:
     from app.ai.summarizer import summarize_and_extract, generate_daily_briefing
@@ -84,19 +85,59 @@ if "code" in query_params and not st.session_state.authenticated and not st.sess
         st.error(f"Authentication failed: {e}")
         st.stop()
 
-# ── Sign-in page ────────────────────────────────────────────────────
+# ── Landing page (unauthenticated) ──────────────────────────────────
 if not st.session_state.authenticated:
-    st.title("📧 Email Cleaner AI")
-    st.info("🔒 **READ-ONLY MODE** — This app does NOT delete, move, or modify any emails.")
+
+    # Hero
     st.markdown("""
-- Understand your inbox breakdown
-- Identify Important, Promotional, and Spam emails
-- See which senders flood your inbox
-""")
-    st.warning("Please sign in with Google to continue")
-    flow = get_google_auth_flow()
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
-    st.markdown(f"👉 **[Sign in with Google]({auth_url})**")
+<div style='text-align: center; padding: 2rem 0 1rem 0;'>
+    <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>📧 Email Cleaner AI</h1>
+    <p style='font-size: 1.3rem; color: #aaa;'>Your inbox, understood in seconds.</p>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Features
+    col1, col2, col3, col4 = st.columns(4)
+    col1.markdown("### 📊\n**Inbox Dashboard**\nSee your emails broken down by category instantly.")
+    col2.markdown("### 🤖\n**AI Summaries**\nGet a one-line summary of every email — no reading required.")
+    col3.markdown("### 🚫\n**Unsubscribe Engine**\nSpot the top senders flooding your inbox.")
+    col4.markdown("### 💾\n**Storage Stats**\nSee exactly which emails are eating your Gmail storage.")
+
+    st.markdown("---")
+
+    # Two columns: sign in + waitlist
+    left, right = st.columns(2)
+
+    with left:
+        st.subheader("🔑 Already have access?")
+        st.caption("Sign in with your Google account to launch the app.")
+        flow = get_google_auth_flow()
+        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+        st.markdown(f"### [👉 Sign in with Google]({auth_url})")
+        st.caption("🔒 Read-only access — we never delete or modify your emails.")
+
+    with right:
+        st.subheader("✋ Want early access?")
+        st.caption("Join the waitlist and we'll reach out when a spot opens.")
+        with st.form("waitlist_form"):
+            w_name  = st.text_input("Your name")
+            w_email = st.text_input("Your email")
+            submitted = st.form_submit_button("Request Access", use_container_width=True)
+
+        if submitted:
+            if not w_email or "@" not in w_email:
+                st.error("Please enter a valid email address.")
+            elif DB_AVAILABLE and save_waitlist:
+                try:
+                    save_waitlist(email=w_email.strip(), name=w_name.strip())
+                    st.success(f"✅ You're on the list, {w_name or 'friend'}! We'll be in touch.")
+                except Exception as e:
+                    st.error(f"Something went wrong: {e}")
+            else:
+                st.warning("Database unavailable — please try again later.")
+
     st.stop()
 
 # ── Save user to DB (silent) ─────────────────────────────────────────

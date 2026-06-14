@@ -2,6 +2,16 @@ from datetime import datetime, timezone
 from app.database.supabase_client import get_supabase
 
 
+def save_waitlist(email: str, name: str = ""):
+    supabase = get_supabase()
+    response = (
+        supabase.table("waitlist")
+        .upsert({"email": email, "name": name}, on_conflict="email")
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def save_user(email: str, full_name: str, provider: str = "google"):
     """
     Insert user if new, or update last_login if they already exist.
