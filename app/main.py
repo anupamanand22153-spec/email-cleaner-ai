@@ -3,6 +3,7 @@
 # =================================================
 import os
 import sys
+import re
 import urllib.parse
 from collections import Counter
 
@@ -240,6 +241,45 @@ size_df = pd.DataFrame(
 st.bar_chart(size_df, color="#F97B4F")
 
 st.caption(f"Total estimated: **{format_size(total_size)}** across last {len(emails)} emails")
+
+st.divider()
+
+# =================================================
+# Unsubscribe Suggestions
+# =================================================
+st.subheader("🚫 Top Promotional Senders")
+st.caption("These senders are filling your inbox — consider unsubscribing")
+
+def extract_sender_name(from_header):
+    match = re.match(r'^"?([^"<]+)"?\s*<', from_header)
+    if match:
+        return match.group(1).strip()
+    email_match = re.search(r'[\w.+\-]+@[\w\-]+\.[a-zA-Z]+', from_header)
+    if email_match:
+        return email_match.group(0)
+    return from_header.strip()
+
+promo_emails = [e for e, cat in classified if cat == "Promotions"]
+
+if promo_emails:
+    sender_counts = Counter(
+        extract_sender_name(e.get("From", "Unknown")) for e in promo_emails
+    )
+    top_senders = sender_counts.most_common(10)
+
+    header_col1, header_col2, header_col3 = st.columns([1, 4, 2])
+    header_col1.markdown("**#**")
+    header_col2.markdown("**Sender**")
+    header_col3.markdown("**Emails**")
+    st.divider()
+
+    for i, (sender, count) in enumerate(top_senders, 1):
+        c1, c2, c3 = st.columns([1, 4, 2])
+        c1.markdown(f"{i}")
+        c2.markdown(f"**{sender}**")
+        c3.markdown(f"🟡 {count} emails")
+else:
+    st.info("No promotional emails found in your last 100 emails.")
 
 st.divider()
 
