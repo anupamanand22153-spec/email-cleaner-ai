@@ -21,6 +21,12 @@ except Exception:
     DB_AVAILABLE = False
     save_user = None
 
+try:
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing
+    AI_AVAILABLE = True
+except Exception:
+    AI_AVAILABLE = False
+
 st.set_page_config(page_title="Email Cleaner AI", layout="wide")
 
 # Session state defaults
@@ -142,6 +148,16 @@ if page == "📊 Dashboard":
     st.title("📊 Dashboard")
     st.caption(f"Stats for your last {len(classified)} emails")
 
+    # ── Daily AI Briefing ──────────────────────────────────────────
+    if AI_AVAILABLE:
+        if "daily_briefing" not in st.session_state:
+            with st.spinner("✨ Generating your daily briefing..."):
+                st.session_state.daily_briefing = generate_daily_briefing(
+                    st.session_state.user_name, classified
+                )
+        st.info(st.session_state.daily_briefing)
+        st.divider()
+
     # Email counts
     st.subheader("📬 Inbox Summary")
     counts = Counter(cat for _, cat in classified)
@@ -196,14 +212,39 @@ elif page == "📨 Inbox":
     st.markdown(f"**{len(filtered)} emails** in this view")
     st.divider()
 
+    # ── Load AI summaries + actions (first 30 emails, cached) ─────
+    if AI_AVAILABLE:
+        if "ai_summaries" not in st.session_state:
+            emails_to_analyse = [e for e, _ in classified[:30]]
+            with st.spinner("✨ AI is reading your emails..."):
+                summaries, actions = summarize_and_extract(emails_to_analyse)
+            st.session_state.ai_summaries = summaries
+            st.session_state.ai_actions   = actions
+
+        summaries = st.session_state.ai_summaries
+        actions   = st.session_state.ai_actions
+    else:
+        summaries = [None] * len(classified)
+        actions   = [None] * len(classified)
+
+    # Build index map from original position
+    classified_with_idx = [(i, e, cat) for i, (e, cat) in enumerate(classified)]
+
     if not filtered:
         st.info(f"No emails in category: {category_filter}")
     else:
-        for email, category in filtered:
+        filtered_with_idx = [(i, e, cat) for i, e, cat in classified_with_idx
+                             if category_filter == "All" or cat == category_filter]
+        for i, email, category in filtered_with_idx:
             col1, col2 = st.columns([5, 1])
             col1.markdown(f"**{email.get('Subject', '(No Subject)')}**")
             col2.markdown(BADGES.get(category, "⚪ OTHER"))
             st.caption(f"From: {email.get('From', 'N/A')}  ·  {email.get('Date', '')}")
+
+            if i < len(summaries) and summaries[i]:
+                st.markdown(f"> {summaries[i]}")
+            if i < len(actions) and actions[i]:
+                st.warning(f"⚠️ **Action:** {actions[i]}")
             st.divider()
 
 # ════════════════════════════════════════════════════════════════════
@@ -260,5 +301,6 @@ elif page == "⚙️ Settings":
     st.subheader("🔄 Refresh Data")
     st.caption("Emails are cached for your session. Click to reload from Gmail.")
     if st.button("Refresh Inbox Data"):
-        st.session_state.pop("cached_classified", None)
+        for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing"]:
+            st.session_state.pop(key, None)
         st.success("Cache cleared — go to Dashboard or Inbox to reload.")
