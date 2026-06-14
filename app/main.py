@@ -376,6 +376,7 @@ with st.sidebar:
         "Navigation",
         PAGES,
         index=PAGES.index(st.session_state.nav_page),
+        key="sidebar_nav",
         label_visibility="collapsed"
     )
     st.session_state.nav_page = page
@@ -425,20 +426,20 @@ if page == "📊 Dashboard":
     b1, b2, b3, b4 = st.columns(4)
     if b1.button("View Important →", use_container_width=True, key="dash_imp"):
         st.session_state.nav_page = "📨 Inbox"
+        st.session_state.sidebar_nav = "📨 Inbox"
         st.session_state.inbox_filter = "Important"
-        st.rerun()
     if b2.button("View Promotions →", use_container_width=True, key="dash_promo"):
         st.session_state.nav_page = "📨 Inbox"
+        st.session_state.sidebar_nav = "📨 Inbox"
         st.session_state.inbox_filter = "Promotions"
-        st.rerun()
     if b3.button("View Spam →", use_container_width=True, key="dash_spam"):
         st.session_state.nav_page = "📨 Inbox"
+        st.session_state.sidebar_nav = "📨 Inbox"
         st.session_state.inbox_filter = "Spam"
-        st.rerun()
     if b4.button("View Other →", use_container_width=True, key="dash_other"):
         st.session_state.nav_page = "📨 Inbox"
+        st.session_state.sidebar_nav = "📨 Inbox"
         st.session_state.inbox_filter = "Other"
-        st.rerun()
 
     st.bar_chart(pd.DataFrame(
         {"Emails": [counts[c] for c in ["Important", "Promotions", "Spam", "Other"]]},
