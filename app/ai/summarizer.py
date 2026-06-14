@@ -1,10 +1,10 @@
 import json
-import anthropic
 import streamlit as st
+from groq import Groq
 
 
 def _client():
-    return anthropic.Anthropic(api_key=st.secrets["anthropic"]["api_key"])
+    return Groq(api_key=st.secrets["groq"]["api_key"])
 
 
 def _email_lines(emails):
@@ -19,8 +19,8 @@ def _email_lines(emails):
 
 def summarize_and_extract(emails):
     """
-    Single Claude call: returns (summaries, actions) — both are lists aligned to `emails`.
-    Summaries: short one-sentence string with emoji.
+    Single Groq call: returns (summaries, actions) aligned to `emails`.
+    Summaries: one-sentence string with emoji.
     Actions: short action string or None.
     """
     email_block = _email_lines(emails)
@@ -32,16 +32,22 @@ def summarize_and_extract(emails):
 Emails:
 {email_block}
 
-Return ONLY valid JSON, no explanation. Example format:
+Return ONLY valid JSON, no explanation. Example:
 {{"summaries": ["📦 Package arriving Tuesday.", "📅 Meeting at 10 AM tomorrow."], "actions": [null, "Confirm attendance by end of day."]}}"""
 
     try:
-        resp = _client().messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1500,
+        resp = _client().chat.completions.create(
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.3,
         )
-        data = json.loads(resp.content[0].text)
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
         summaries = data.get("summaries", [None] * len(emails))
         actions   = data.get("actions",   [None] * len(emails))
         return summaries, actions
@@ -79,11 +85,12 @@ Rules:
 - Do NOT use headers or sub-sections"""
 
     try:
-        resp = _client().messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=350,
+        resp = _client().chat.completions.create(
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.5,
         )
-        return resp.content[0].text.strip()
+        return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"Could not generate briefing: {e}"
