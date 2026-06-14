@@ -23,7 +23,7 @@ except Exception:
     save_waitlist = None
 
 try:
-    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails
     AI_AVAILABLE = True
 except Exception:
     AI_AVAILABLE = False
@@ -345,7 +345,7 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigation",
-        ["📊 Dashboard", "📨 Inbox", "🚫 Unsubscribe", "⚙️ Settings"],
+        ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "⚙️ Settings"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -416,6 +416,59 @@ if page == "📊 Dashboard":
         index=["Important", "Promotions", "Spam", "Other"]
     ), color="#F97B4F")
     st.caption(f"Total estimated: **{format_size(total)}** across last {len(classified)} emails")
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Search
+# ════════════════════════════════════════════════════════════════════
+elif page == "🔍 Search":
+    classified = load_emails()
+    st.title("🔍 AI Search")
+    st.caption("Ask anything about your inbox in plain English")
+
+    BADGES = {"Important": "🟢 IMPORTANT", "Promotions": "🟡 PROMOTION", "Spam": "🔴 SPAM", "Other": "⚪ OTHER"}
+
+    examples = [
+        "Show emails that need a reply",
+        "Emails from Amazon",
+        "Any payment reminders?",
+        "Summarise emails from this week",
+    ]
+    st.markdown(" &nbsp;·&nbsp; ".join(f"`{e}`" for e in examples))
+    st.markdown("")
+
+    query = st.text_input(
+        "Your question",
+        placeholder='e.g. "emails about internships" or "what needs urgent attention?"',
+        label_visibility="collapsed"
+    )
+
+    if query:
+        if not AI_AVAILABLE:
+            st.error("AI not available — check your Groq API key in secrets.")
+        else:
+            emails_list = [e for e, _ in classified]
+            with st.spinner("🤖 Searching your inbox..."):
+                answer, indices = search_emails(query, emails_list)
+
+            st.info(f"💬 {answer}")
+
+            if indices:
+                valid = [i for i in indices if 0 <= i < len(classified)]
+                st.markdown(f"**{len(valid)} matching email{'s' if len(valid) != 1 else ''}:**")
+                st.divider()
+                for i in valid:
+                    email, category = classified[i]
+                    col1, col2 = st.columns([5, 1])
+                    col1.markdown(f"**{email.get('Subject', '(No Subject)')}**")
+                    col2.markdown(BADGES.get(category, "⚪ OTHER"))
+                    st.caption(f"From: {email.get('From', 'N/A')}  ·  {email.get('Date', '')}")
+                    if "ai_summaries" in st.session_state and i < len(st.session_state.ai_summaries):
+                        summary = st.session_state.ai_summaries[i]
+                        if summary:
+                            st.markdown(f"> {summary}")
+                    st.divider()
+            else:
+                st.info("No matching emails found for that query.")
 
 # ════════════════════════════════════════════════════════════════════
 # PAGE: Inbox
