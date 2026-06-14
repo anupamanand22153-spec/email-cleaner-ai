@@ -28,6 +28,7 @@ def fetch_email_metadata(service, max_results=10):
             if h["name"] in email:
                 email[h["name"]] = h["value"]
 
+        email["sizeEstimate"] = msg_detail.get("sizeEstimate", 0)
         email_data.append(email)
 
     return email_data

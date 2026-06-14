@@ -4,6 +4,9 @@
 import os
 import sys
 import urllib.parse
+from collections import Counter
+
+import pandas as pd
 
 PROJECT_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
@@ -39,7 +42,7 @@ except Exception as import_err:
 # =================================================
 st.set_page_config(
     page_title="Email Cleaner AI",
-    layout="centered"
+    layout="wide"
 )
 
 # =================================================
@@ -55,7 +58,7 @@ if "token_fetched" not in st.session_state:
     st.session_state.token_fetched = False
 
 if "user_saved" not in st.session_state:
-    st.session_state.user_saved = True  # True means no save needed
+    st.session_state.user_saved = True
 
 # =================================================
 # OAuth Callback Handler
@@ -70,8 +73,6 @@ if (
     st.session_state.token_fetched = True
 
     try:
-        # Call Google's token endpoint directly to avoid any
-        # library-level encoding or redirect_uri issues
         token_resp = req_lib.post(
             "https://oauth2.googleapis.com/token",
             data={
@@ -96,7 +97,6 @@ if (
             scopes=token_data.get("scope", "").split(),
         )
 
-        # Fetch real name and email from Google
         userinfo_resp = req_lib.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
             headers={"Authorization": f"Bearer {token_data['access_token']}"},
@@ -107,7 +107,7 @@ if (
         st.session_state.user_email = userinfo.get("email", "")
         st.session_state.user_name = userinfo.get("name", "")
         st.session_state.authenticated = True
-        st.session_state.user_saved = False  # flag to save after rerun
+        st.session_state.user_saved = False
         st.query_params.clear()
         st.rerun()
 
@@ -125,22 +125,21 @@ st.info(
     "🔒 **READ-ONLY MODE**: This app does NOT delete, move, or modify any emails."
 )
 
-st.markdown(
-    """
-This AI agent helps you:
-
-- Understand your inbox
-- Identify **Important**, **Promotional**, and **Other** emails
-- Reduce inbox overload safely
-"""
-)
-
 st.divider()
 
 # =================================================
 # Authentication
 # =================================================
 if not st.session_state.authenticated:
+    st.markdown(
+        """
+    This AI agent helps you:
+
+    - Understand your inbox
+    - Identify **Important**, **Promotional**, and **Other** emails
+    - Reduce inbox overload safely
+    """
+    )
     st.warning("Please sign in with Google to continue")
 
     flow = get_google_auth_flow()
@@ -154,42 +153,61 @@ if not st.session_state.authenticated:
     st.stop()
 
 # =================================================
-# Logged In State
+# Logged In — Save User to DB
 # =================================================
 user_name = st.session_state.get("user_name", "")
 user_email = st.session_state.get("user_email", "")
-st.success(f"✅ Logged in as {user_name} ({user_email})")
 
-# Show database status
-if not DB_AVAILABLE:
-    st.error(f"❌ Database module failed to load: {_DB_ERROR}")
-else:
-    st.write("✅ Database module loaded")
-
-    # Save user on first login
-    if not st.session_state.user_saved:
-        try:
-            result = save_user(email=user_email, full_name=user_name, provider="google")
-            st.session_state.user_saved = True
-            st.info(f"✅ Saved to database: {result}")
-        except Exception as db_error:
-            st.error(f"⚠️ Database save failed: {db_error}")
-            st.exception(db_error)
-
-    # Test button
-    if st.button("🔧 Test DB Save Now"):
-        try:
-            result = save_user(email=user_email or "manual@test.com", full_name=user_name or "Manual Test", provider="google")
-            st.success(f"✅ DB Save worked: {result}")
-        except Exception as e:
-            st.error(f"❌ DB Save failed: {e}")
-            st.exception(e)
-
-service = get_gmail_service(st.session_state.credentials)
-emails = fetch_email_metadata(service, max_results=20)
+if DB_AVAILABLE and not st.session_state.user_saved:
+    try:
+        save_user(email=user_email, full_name=user_name, provider="google")
+        st.session_state.user_saved = True
+    except Exception:
+        pass  # Silent fail — DB save is non-critical
 
 # =================================================
-# Email Filter
+# Fetch Emails (once, used for both dashboard + list)
+# =================================================
+with st.spinner("Loading your inbox..."):
+    service = get_gmail_service(st.session_state.credentials)
+    emails = fetch_email_metadata(service, max_results=100)
+
+if not emails:
+    st.warning("No emails found in your inbox.")
+    st.stop()
+
+# Classify all emails
+classified = [(e, classify_email(e)) for e in emails]
+
+# =================================================
+# Dashboard
+# =================================================
+st.subheader(f"👋 Welcome, {user_name}")
+st.caption(f"Signed in as {user_email}")
+
+st.subheader("📊 Inbox Summary")
+st.caption(f"Based on your last {len(emails)} emails")
+
+counts = Counter(cat for _, cat in classified)
+for cat in ["Important", "Promotions", "Spam", "Other"]:
+    counts.setdefault(cat, 0)
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("🟢 Important", counts["Important"])
+col2.metric("🟡 Promotions", counts["Promotions"])
+col3.metric("🔴 Spam", counts["Spam"])
+col4.metric("⚪ Other", counts["Other"])
+
+chart_df = pd.DataFrame(
+    {"Emails": [counts["Important"], counts["Promotions"], counts["Spam"], counts["Other"]]},
+    index=["Important", "Promotions", "Spam", "Other"]
+)
+st.bar_chart(chart_df, color="#4F8BF9")
+
+st.divider()
+
+# =================================================
+# Email Filter + List
 # =================================================
 st.subheader("📂 Filter Emails")
 
@@ -198,21 +216,15 @@ category_filter = st.selectbox(
     ["All", "Important", "Promotions", "Spam", "Other"]
 )
 
-# =================================================
-# Email Display
-# =================================================
 st.subheader("📨 Recent Emails")
 
-if not emails:
-    st.warning("No emails found.")
+filtered = [(e, cat) for e, cat in classified if category_filter == "All" or cat == category_filter]
+
+if not filtered:
+    st.info(f"No emails found in category: {category_filter}")
     st.stop()
 
-for email in emails:
-    category = classify_email(email)
-
-    if category_filter != "All" and category != category_filter:
-        continue
-
+for email, category in filtered:
     badge = {
         "Important": "🟢 IMPORTANT",
         "Promotions": "🟡 PROMOTION",
