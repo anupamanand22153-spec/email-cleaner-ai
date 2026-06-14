@@ -362,6 +362,11 @@ def load_emails():
     return st.session_state.cached_classified
 
 # ── Sidebar navigation ───────────────────────────────────────────────
+PAGES = ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
+
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = "📊 Dashboard"
+
 with st.sidebar:
     st.markdown(f"### 📧 Email Cleaner AI")
     st.markdown(f"👤 **{st.session_state.user_name}**")
@@ -369,9 +374,11 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigation",
-        ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"],
+        PAGES,
+        index=PAGES.index(st.session_state.nav_page),
         label_visibility="collapsed"
     )
+    st.session_state.nav_page = page
     st.divider()
     if st.button("Sign Out", use_container_width=True):
         for key in list(st.session_state.keys()):
@@ -414,6 +421,24 @@ if page == "📊 Dashboard":
     c2.metric("🟡 Promotions", counts["Promotions"])
     c3.metric("🔴 Spam", counts["Spam"])
     c4.metric("⚪ Other", counts["Other"])
+
+    b1, b2, b3, b4 = st.columns(4)
+    if b1.button("View Important →", use_container_width=True, key="dash_imp"):
+        st.session_state.nav_page = "📨 Inbox"
+        st.session_state.inbox_filter = "Important"
+        st.rerun()
+    if b2.button("View Promotions →", use_container_width=True, key="dash_promo"):
+        st.session_state.nav_page = "📨 Inbox"
+        st.session_state.inbox_filter = "Promotions"
+        st.rerun()
+    if b3.button("View Spam →", use_container_width=True, key="dash_spam"):
+        st.session_state.nav_page = "📨 Inbox"
+        st.session_state.inbox_filter = "Spam"
+        st.rerun()
+    if b4.button("View Other →", use_container_width=True, key="dash_other"):
+        st.session_state.nav_page = "📨 Inbox"
+        st.session_state.inbox_filter = "Other"
+        st.rerun()
 
     st.bar_chart(pd.DataFrame(
         {"Emails": [counts[c] for c in ["Important", "Promotions", "Spam", "Other"]]},
@@ -502,7 +527,13 @@ elif page == "📨 Inbox":
     st.title("📨 Inbox Analysis")
     st.caption(f"Your last {len(classified)} emails")
 
-    category_filter = st.selectbox("Filter by category:", ["All", "Important", "Promotions", "Spam", "Other"])
+    preset  = st.session_state.pop("inbox_filter", "All")
+    options = ["All", "Important", "Promotions", "Spam", "Other"]
+    category_filter = st.selectbox(
+        "Filter by category:",
+        options,
+        index=options.index(preset) if preset in options else 0
+    )
     filtered = [(e, cat) for e, cat in classified if category_filter == "All" or cat == category_filter]
 
     BADGES = {"Important": "🟢 IMPORTANT", "Promotions": "🟡 PROMOTION", "Spam": "🔴 SPAM", "Other": "⚪ OTHER"}
