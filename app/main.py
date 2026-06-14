@@ -207,6 +207,43 @@ st.bar_chart(chart_df, color="#4F8BF9")
 st.divider()
 
 # =================================================
+# Storage Stats
+# =================================================
+st.subheader("💾 Storage Usage")
+st.caption(f"Estimated across your last {len(emails)} emails")
+
+def format_size(b):
+    if b >= 1_000_000_000:
+        return f"{b / 1_000_000_000:.2f} GB"
+    if b >= 1_000_000:
+        return f"{b / 1_000_000:.1f} MB"
+    if b >= 1_000:
+        return f"{b / 1_000:.1f} KB"
+    return f"{b} B"
+
+size_by_cat = {"Important": 0, "Promotions": 0, "Spam": 0, "Other": 0}
+for email, category in classified:
+    size_by_cat[category] += email.get("sizeEstimate", 0)
+
+total_size = sum(size_by_cat.values())
+
+s1, s2, s3, s4 = st.columns(4)
+s1.metric("🟢 Important", format_size(size_by_cat["Important"]))
+s2.metric("🟡 Promotions", format_size(size_by_cat["Promotions"]))
+s3.metric("🔴 Spam", format_size(size_by_cat["Spam"]))
+s4.metric("⚪ Other", format_size(size_by_cat["Other"]))
+
+size_df = pd.DataFrame(
+    {"Size (MB)": [round(size_by_cat[c] / 1_000_000, 2) for c in ["Important", "Promotions", "Spam", "Other"]]},
+    index=["Important", "Promotions", "Spam", "Other"]
+)
+st.bar_chart(size_df, color="#F97B4F")
+
+st.caption(f"Total estimated: **{format_size(total_size)}** across last {len(emails)} emails")
+
+st.divider()
+
+# =================================================
 # Email Filter + List
 # =================================================
 st.subheader("📂 Filter Emails")
