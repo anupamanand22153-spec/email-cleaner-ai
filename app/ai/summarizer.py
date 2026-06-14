@@ -55,6 +55,53 @@ Return ONLY valid JSON, no explanation. Example:
         return [None] * len(emails), [None] * len(emails)
 
 
+def classify_emails_batch(emails):
+    """
+    AI-powered batch classification of emails.
+    Returns a list of categories aligned to `emails`.
+    Categories: Important | Promotions | Spam | Other
+    """
+    lines = []
+    for i, e in enumerate(emails, 1):
+        sender  = e.get("From", "")[:80]
+        subject = e.get("Subject", "")[:120]
+        snippet = e.get("snippet", "")[:150]
+        lines.append(f"{i}. From: {sender} | Subject: {subject} | Preview: {snippet}")
+    email_block = "\n".join(lines)
+
+    prompt = f"""You are an expert email classifier. Classify each email into exactly one category:
+
+- Important: personal emails, work/professional, banking/finance, OTP/security codes, invoices, meeting requests, job offers, medical, legal, order confirmations, flight/hotel bookings
+- Promotions: marketing emails, newsletters, brand offers, discounts, sales, product launches, subscription updates from known companies
+- Spam: scams, phishing, fake prizes/lotteries, suspicious senders, unsolicited bulk emails, fake job offers, crypto scams, adult content, miracle cures
+- Other: social media notifications, automated system alerts, GitHub/app notifications, receipts not fitting above
+
+Emails to classify:
+{email_block}
+
+Return ONLY a JSON array of exactly {len(emails)} strings. Each string must be one of: "Important", "Promotions", "Spam", "Other".
+Example for 3 emails: ["Important", "Spam", "Promotions"]
+No explanation, no extra text — just the JSON array."""
+
+    try:
+        resp = _client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500,
+            temperature=0.1,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        categories = json.loads(text.strip())
+        valid = {"Important", "Promotions", "Spam", "Other"}
+        return [c if c in valid else "Other" for c in categories]
+    except Exception:
+        return None  # Caller falls back to rule-based
+
+
 def search_emails(query, emails):
     """
     Natural language search across emails.

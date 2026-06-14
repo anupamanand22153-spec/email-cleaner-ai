@@ -23,7 +23,7 @@ except Exception:
     save_waitlist = None
 
 try:
-    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch
     from app.ai.weekly_report import generate_weekly_report
     AI_AVAILABLE = True
 except Exception:
@@ -334,9 +334,23 @@ def load_emails():
     if "cached_classified" not in st.session_state:
         try:
             service = get_gmail_service(st.session_state.credentials)
-            with st.spinner("Loading your inbox..."):
+            with st.spinner("📬 Loading your inbox..."):
                 emails = fetch_email_metadata(service, max_results=100)
-            st.session_state.cached_classified = [(e, classify_email(e)) for e in emails]
+
+            # AI classification (batch) with rule-based fallback
+            if AI_AVAILABLE:
+                with st.spinner("🤖 AI is classifying your emails..."):
+                    ai_categories = classify_emails_batch(emails)
+            else:
+                ai_categories = None
+
+            if ai_categories and len(ai_categories) == len(emails):
+                classified = list(zip(emails, ai_categories))
+            else:
+                # Fallback to rule-based
+                classified = [(e, classify_email(e)) for e in emails]
+
+            st.session_state.cached_classified = classified
         except Exception as e:
             st.error("Could not load your emails. This usually means Gmail access was not granted during sign-in.")
             st.info("Please sign out below and sign in again — make sure to click **Allow** on all permissions.")
