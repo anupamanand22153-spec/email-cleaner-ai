@@ -66,14 +66,15 @@ def classify_emails_batch(emails):
         sender  = e.get("From", "")[:80]
         subject = e.get("Subject", "")[:120]
         snippet = e.get("snippet", "")[:150]
-        lines.append(f"{i}. From: {sender} | Subject: {subject} | Preview: {snippet}")
+        gmail_spam = " [GMAIL_MARKED_SPAM]" if e.get("_gmail_spam") else ""
+        lines.append(f"{i}. From: {sender} | Subject: {subject} | Preview: {snippet}{gmail_spam}")
     email_block = "\n".join(lines)
 
     prompt = f"""You are an expert email classifier. Classify each email into exactly one category:
 
 - Important: personal emails, work/professional, banking/finance, OTP/security codes, invoices, meeting requests, job offers, medical, legal, order confirmations, flight/hotel bookings
 - Promotions: marketing emails, newsletters, brand offers, discounts, sales, product launches, subscription updates from known companies
-- Spam: scams, phishing, fake prizes/lotteries, suspicious senders, unsolicited bulk emails, fake job offers, crypto scams, adult content, miracle cures
+- Spam: scams, phishing, fake prizes/lotteries, suspicious senders, unsolicited bulk emails, fake job offers, crypto scams, adult content, miracle cures. Emails tagged [GMAIL_MARKED_SPAM] should almost always be classified as Spam.
 - Other: social media notifications, automated system alerts, GitHub/app notifications, receipts not fitting above
 
 Emails to classify:
