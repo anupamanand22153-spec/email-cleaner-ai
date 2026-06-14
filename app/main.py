@@ -24,6 +24,7 @@ except Exception:
 
 try:
     from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails
+    from app.ai.weekly_report import generate_weekly_report
     AI_AVAILABLE = True
 except Exception:
     AI_AVAILABLE = False
@@ -292,7 +293,7 @@ if not st.session_state.authenticated:
 
 <!-- FOOTER -->
 <div class="landing-footer">
-    © 2026 Email Cleaner AI &nbsp;·&nbsp; Built with ❤️ &nbsp;·&nbsp; Read-only, privacy-first
+    © 2026 Email Cleaner AI &nbsp;·&nbsp; Read-only, privacy-first &nbsp;·&nbsp; We never delete or modify your emails
 </div>
 """, unsafe_allow_html=True)
 
@@ -345,7 +346,7 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigation",
-        ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "⚙️ Settings"],
+        ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -560,6 +561,44 @@ elif page == "🚫 Unsubscribe":
             c3.markdown(f"🟡 {count}  `{pct}%`")
 
 # ════════════════════════════════════════════════════════════════════
+# PAGE: Weekly Report
+# ════════════════════════════════════════════════════════════════════
+elif page == "📋 Weekly Report":
+    classified = load_emails()
+    st.title("📋 Weekly Inbox Report")
+    st.caption("Your inbox health summary — generated fresh on demand")
+
+    if not AI_AVAILABLE:
+        st.error("AI not available — check your Groq API key.")
+    else:
+        if "weekly_report" not in st.session_state:
+            with st.spinner("✨ Generating your weekly report..."):
+                st.session_state.weekly_report = generate_weekly_report(
+                    st.session_state.user_name, classified
+                )
+
+        st.markdown(st.session_state.weekly_report)
+        st.divider()
+
+        counts = Counter(cat for _, cat in classified)
+        size_by_cat = {"Important": 0, "Promotions": 0, "Spam": 0, "Other": 0}
+        for email, cat in classified:
+            size_by_cat[cat] += email.get("sizeEstimate", 0)
+        total = sum(size_by_cat.values())
+
+        st.subheader("📊 This Week by the Numbers")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🟢 Important",  counts.get("Important", 0))
+        c2.metric("🟡 Promotions", counts.get("Promotions", 0))
+        c3.metric("🔴 Spam",       counts.get("Spam", 0))
+        c4.metric("💾 Total Size", format_size(total))
+
+        st.divider()
+        if st.button("🔄 Regenerate Report"):
+            st.session_state.pop("weekly_report", None)
+            st.rerun()
+
+# ════════════════════════════════════════════════════════════════════
 # PAGE: Settings
 # ════════════════════════════════════════════════════════════════════
 elif page == "⚙️ Settings":
@@ -575,6 +614,23 @@ elif page == "⚙️ Settings":
     st.subheader("🔄 Refresh Data")
     st.caption("Emails are cached for your session. Click to reload from Gmail.")
     if st.button("Refresh Inbox Data"):
-        for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing"]:
+        for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing", "weekly_report"]:
             st.session_state.pop(key, None)
         st.success("Cache cleared — go to Dashboard or Inbox to reload.")
+
+    st.divider()
+    st.subheader("🔒 Privacy & Data")
+    st.markdown("""
+**What we access:** Gmail metadata only (sender, subject, date, size). We never read email body content in full.
+
+**What we store:** Your name, email address, and last login time in our secure database.
+
+**What we never do:**
+- Delete, move, or modify any emails
+- Store your email content permanently
+- Share your data with third parties
+
+**AI Processing:** Email subjects and previews are sent to Groq (Llama 3) for summarisation. No data is retained by Groq after processing.
+
+**Your rights:** You can delete your account and all data by contacting us. Sign out at any time to revoke access.
+""")
