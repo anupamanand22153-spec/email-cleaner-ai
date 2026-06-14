@@ -10,7 +10,7 @@ st.set_page_config(page_title="Inbox — Email Cleaner AI", layout="wide")
 
 if not st.session_state.get("authenticated"):
     st.warning("Please sign in first.")
-    st.page_link("main.py", label="Go to Sign In →")
+    st.page_link("main.py", label="Go to Sign In")
     st.stop()
 
 def load_emails():
@@ -23,20 +23,20 @@ def load_emails():
 
 classified = load_emails()
 
-st.title("📨 Inbox Analysis")
-st.caption(f"Showing your last {len(classified)} emails · {st.session_state.user_email}")
-
-category_filter = st.selectbox(
-    "Filter by category:",
-    ["All", "Important", "Promotions", "Spam", "Other"]
-)
-
 BADGES = {
     "Important": "🟢 IMPORTANT",
     "Promotions": "🟡 PROMOTION",
     "Spam": "🔴 SPAM",
     "Other": "⚪ OTHER",
 }
+
+st.title("📨 Inbox Analysis")
+st.caption(f"Showing your last {len(classified)} emails · {st.session_state.get('user_email', '')}")
+
+category_filter = st.selectbox(
+    "Filter by category:",
+    ["All", "Important", "Promotions", "Spam", "Other"]
+)
 
 filtered = [(e, cat) for e, cat in classified if category_filter == "All" or cat == category_filter]
 

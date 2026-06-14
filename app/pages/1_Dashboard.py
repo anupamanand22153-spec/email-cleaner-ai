@@ -12,7 +12,7 @@ st.set_page_config(page_title="Dashboard — Email Cleaner AI", layout="wide")
 
 if not st.session_state.get("authenticated"):
     st.warning("Please sign in first.")
-    st.page_link("main.py", label="Go to Sign In →")
+    st.page_link("main.py", label="Go to Sign In")
     st.stop()
 
 def format_size(b):
@@ -31,10 +31,9 @@ def load_emails():
 
 classified = load_emails()
 
-st.title("📊 Inbox Dashboard")
-st.caption(f"Showing stats for your last {len(classified)} emails · {st.session_state.user_email}")
+st.title("📊 Dashboard")
+st.caption(f"Showing stats for your last {len(classified)} emails · {st.session_state.get('user_email', '')}")
 
-# --- Email Counts ---
 st.subheader("📬 Inbox Summary")
 counts = Counter(cat for _, cat in classified)
 for cat in ["Important", "Promotions", "Spam", "Other"]:
@@ -54,7 +53,6 @@ st.bar_chart(chart_df, color="#4F8BF9")
 
 st.divider()
 
-# --- Storage Stats ---
 st.subheader("💾 Storage Usage")
 size_by_cat = {"Important": 0, "Promotions": 0, "Spam": 0, "Other": 0}
 for email, cat in classified:
