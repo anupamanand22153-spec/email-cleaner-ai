@@ -88,43 +88,223 @@ if "code" in query_params and not st.session_state.authenticated and not st.sess
 # ── Landing page (unauthenticated) ──────────────────────────────────
 if not st.session_state.authenticated:
 
-    # Hero
-    st.markdown("""
-<div style='text-align: center; padding: 2rem 0 1rem 0;'>
-    <h1 style='font-size: 3rem; margin-bottom: 0.5rem;'>📧 Email Cleaner AI</h1>
-    <p style='font-size: 1.3rem; color: #aaa;'>Your inbox, understood in seconds.</p>
+    flow = get_google_auth_flow()
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+
+    st.markdown(f"""
+<style>
+    /* Hide Streamlit default chrome on landing */
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header {{visibility: hidden;}}
+    .block-container {{padding-top: 0 !important; max-width: 100% !important;}}
+
+    /* Global */
+    body {{ background: #ffffff; }}
+
+    /* ── HERO ── */
+    .hero {{
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 60%, #3B82F6 100%);
+        padding: 5rem 2rem 4rem 2rem;
+        text-align: center;
+        color: white;
+    }}
+    .hero h1 {{
+        font-size: 3.2rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        letter-spacing: -1px;
+    }}
+    .hero p {{
+        font-size: 1.25rem;
+        color: #BFDBFE;
+        max-width: 600px;
+        margin: 0 auto 2rem auto;
+    }}
+    .hero-btn {{
+        display: inline-block;
+        background: white;
+        color: #1E3A8A;
+        font-weight: 700;
+        font-size: 1rem;
+        padding: 0.85rem 2rem;
+        border-radius: 50px;
+        text-decoration: none;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        transition: transform 0.2s;
+    }}
+    .hero-btn:hover {{ transform: scale(1.04); text-decoration: none; color: #1E3A8A; }}
+    .hero-note {{
+        margin-top: 1rem;
+        font-size: 0.85rem;
+        color: #BFDBFE;
+    }}
+
+    /* ── FEATURES ── */
+    .features {{
+        background: #F0F7FF;
+        padding: 3.5rem 2rem;
+        text-align: center;
+    }}
+    .features h2 {{
+        font-size: 2rem;
+        color: #1E3A8A;
+        font-weight: 700;
+        margin-bottom: 2.5rem;
+    }}
+    .feature-grid {{
+        display: flex;
+        justify-content: center;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        max-width: 1000px;
+        margin: 0 auto;
+    }}
+    .feature-card {{
+        background: white;
+        border-radius: 16px;
+        padding: 2rem 1.5rem;
+        width: 210px;
+        box-shadow: 0 2px 16px rgba(37,99,235,0.08);
+        border-top: 4px solid #2563EB;
+    }}
+    .feature-card .icon {{ font-size: 2.2rem; margin-bottom: 0.8rem; }}
+    .feature-card h3 {{ font-size: 1rem; font-weight: 700; color: #1E3A8A; margin-bottom: 0.5rem; }}
+    .feature-card p  {{ font-size: 0.88rem; color: #64748B; line-height: 1.5; }}
+
+    /* ── HOW IT WORKS ── */
+    .how {{
+        background: white;
+        padding: 3.5rem 2rem;
+        text-align: center;
+    }}
+    .how h2 {{ font-size: 2rem; color: #1E3A8A; font-weight: 700; margin-bottom: 2.5rem; }}
+    .steps {{
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        flex-wrap: wrap;
+        max-width: 900px;
+        margin: 0 auto;
+    }}
+    .step {{
+        width: 200px;
+    }}
+    .step-num {{
+        background: #2563EB;
+        color: white;
+        font-weight: 800;
+        font-size: 1.2rem;
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 1rem auto;
+    }}
+    .step h3 {{ font-size: 1rem; font-weight: 700; color: #1E3A8A; margin-bottom: 0.4rem; }}
+    .step p  {{ font-size: 0.88rem; color: #64748B; line-height: 1.5; }}
+
+    /* ── WAITLIST ── */
+    .waitlist-section {{
+        background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+        padding: 3.5rem 2rem;
+        text-align: center;
+        color: white;
+    }}
+    .waitlist-section h2 {{ font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }}
+    .waitlist-section p  {{ color: #BFDBFE; margin-bottom: 2rem; }}
+
+    /* ── FOOTER ── */
+    .landing-footer {{
+        background: #1E3A8A;
+        color: #BFDBFE;
+        text-align: center;
+        padding: 1.5rem;
+        font-size: 0.85rem;
+    }}
+</style>
+
+<!-- HERO -->
+<div class="hero">
+    <h1>📧 Email Cleaner AI</h1>
+    <p>Stop drowning in emails. Let AI read, classify, and summarise your inbox — in seconds.</p>
+    <a class="hero-btn" href="{auth_url}">🔑 Sign in with Google</a>
+    <div class="hero-note">🔒 Read-only access &nbsp;·&nbsp; We never delete or modify your emails</div>
+</div>
+
+<!-- FEATURES -->
+<div class="features">
+    <h2>Everything you need to tame your inbox</h2>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="icon">📊</div>
+            <h3>Inbox Dashboard</h3>
+            <p>See your emails broken down by category with live charts.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">🤖</div>
+            <h3>AI Summaries</h3>
+            <p>One-line AI summary per email — know what matters without reading.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">⚠️</div>
+            <h3>Action Items</h3>
+            <p>AI flags emails that need a reply or action from you.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">🚫</div>
+            <h3>Unsubscribe Engine</h3>
+            <p>Spot the top senders flooding your inbox with promotions.</p>
+        </div>
+        <div class="feature-card">
+            <div class="icon">💾</div>
+            <h3>Storage Stats</h3>
+            <p>Find out which emails are eating your Gmail storage.</p>
+        </div>
+    </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<div class="how">
+    <h2>How it works</h2>
+    <div class="steps">
+        <div class="step">
+            <div class="step-num">1</div>
+            <h3>Sign in with Google</h3>
+            <p>One click, read-only access to your Gmail.</p>
+        </div>
+        <div class="step">
+            <div class="step-num">2</div>
+            <h3>AI analyses your inbox</h3>
+            <p>100 emails classified and summarised in seconds.</p>
+        </div>
+        <div class="step">
+            <div class="step-num">3</div>
+            <h3>Get your daily briefing</h3>
+            <p>Know exactly what needs your attention today.</p>
+        </div>
+        <div class="step">
+            <div class="step-num">4</div>
+            <h3>Clean with confidence</h3>
+            <p>Unsubscribe, archive, and take back your inbox.</p>
+        </div>
+    </div>
+</div>
+
+<!-- FOOTER -->
+<div class="landing-footer">
+    © 2026 Email Cleaner AI &nbsp;·&nbsp; Built with ❤️ &nbsp;·&nbsp; Read-only, privacy-first
 </div>
 """, unsafe_allow_html=True)
 
-    st.markdown("---")
+    # ── Waitlist form (Streamlit native, below the HTML) ────────────
+    st.markdown("<div class='waitlist-section'><h2>✋ Request Early Access</h2><p>We're onboarding users gradually. Drop your details and we'll reach out.</p></div>", unsafe_allow_html=True)
 
-    # Features
-    col1, col2, col3, col4 = st.columns(4)
-    col1.markdown("### 📊\n**Inbox Dashboard**\nSee your emails broken down by category instantly.")
-    col2.markdown("### 🤖\n**AI Summaries**\nGet a one-line summary of every email — no reading required.")
-    col3.markdown("### 🚫\n**Unsubscribe Engine**\nSpot the top senders flooding your inbox.")
-    col4.markdown("### 💾\n**Storage Stats**\nSee exactly which emails are eating your Gmail storage.")
-
-    st.markdown("---")
-
-    # Two columns: sign in + waitlist
-    left, right = st.columns(2)
-
-    with left:
-        st.subheader("🔑 Already have access?")
-        st.caption("Sign in with your Google account to launch the app.")
-        flow = get_google_auth_flow()
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
-        st.markdown(f"### [👉 Sign in with Google]({auth_url})")
-        st.caption("🔒 Read-only access — we never delete or modify your emails.")
-
-    with right:
-        st.subheader("✋ Want early access?")
-        st.caption("Join the waitlist and we'll reach out when a spot opens.")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
         with st.form("waitlist_form"):
-            w_name  = st.text_input("Your name")
-            w_email = st.text_input("Your email")
-            submitted = st.form_submit_button("Request Access", use_container_width=True)
+            w_name  = st.text_input("Your name", placeholder="Anupam Anand")
+            w_email = st.text_input("Your email", placeholder="you@gmail.com")
+            submitted = st.form_submit_button("🚀 Request Access", use_container_width=True)
 
         if submitted:
             if not w_email or "@" not in w_email:
@@ -132,7 +312,7 @@ if not st.session_state.authenticated:
             elif DB_AVAILABLE and save_waitlist:
                 try:
                     save_waitlist(email=w_email.strip(), name=w_name.strip())
-                    st.success(f"✅ You're on the list, {w_name or 'friend'}! We'll be in touch.")
+                    st.success(f"✅ You're on the list, {w_name or 'friend'}! We'll be in touch soon.")
                 except Exception as e:
                     st.error(f"Something went wrong: {e}")
             else:
