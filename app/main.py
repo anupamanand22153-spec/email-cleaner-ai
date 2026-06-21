@@ -489,14 +489,18 @@ elif page == "💬 Chat":
         "Do I have any payment reminders?",
     ]
 
+    # Initialize chat history and context before any usage
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    if "email_context" not in st.session_state:
+        st.session_state.email_context = build_email_context(classified)
+
     if not st.session_state.chat_history:
         st.markdown("**Try asking:**")
         cols = st.columns(len(starters))
         for i, (col, starter) in enumerate(zip(cols, starters)):
             if col.button(starter, key=f"starter_{i}", use_container_width=True):
                 st.session_state.chat_history.append({"role": "user", "content": starter})
-                if "email_context" not in st.session_state:
-                    st.session_state.email_context = build_email_context(classified)
                 reply = chat_with_inbox(
                     user_message=starter,
                     email_context=st.session_state.email_context,
@@ -507,14 +511,6 @@ elif page == "💬 Chat":
                 st.rerun()
 
     st.divider()
-
-    # Initialize chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-
-    # Build email context once per session
-    if "email_context" not in st.session_state:
-        st.session_state.email_context = build_email_context(classified)
 
     # Display existing messages
     for msg in st.session_state.chat_history:
