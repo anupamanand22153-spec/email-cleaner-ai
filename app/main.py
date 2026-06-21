@@ -480,7 +480,7 @@ elif page == "💬 Chat":
         st.error("AI not available — check your Groq API key in secrets.")
         st.stop()
 
-    # Suggested starters
+    # Suggested starters — clickable buttons
     starters = [
         "What should I focus on today?",
         "Which emails need a reply?",
@@ -488,7 +488,24 @@ elif page == "💬 Chat":
         "Who sends me the most promotions?",
         "Do I have any payment reminders?",
     ]
-    st.markdown(" &nbsp;·&nbsp; ".join(f"`{s}`" for s in starters))
+
+    if not st.session_state.chat_history:
+        st.markdown("**Try asking:**")
+        cols = st.columns(len(starters))
+        for i, (col, starter) in enumerate(zip(cols, starters)):
+            if col.button(starter, key=f"starter_{i}", use_container_width=True):
+                st.session_state.chat_history.append({"role": "user", "content": starter})
+                if "email_context" not in st.session_state:
+                    st.session_state.email_context = build_email_context(classified)
+                reply = chat_with_inbox(
+                    user_message=starter,
+                    email_context=st.session_state.email_context,
+                    history=[],
+                    user_name=st.session_state.user_name,
+                )
+                st.session_state.chat_history.append({"role": "assistant", "content": reply})
+                st.rerun()
+
     st.divider()
 
     # Initialize chat history
