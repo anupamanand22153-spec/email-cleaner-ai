@@ -501,12 +501,13 @@ elif page == "💬 Chat":
         for i, (col, starter) in enumerate(zip(cols, starters)):
             if col.button(starter, key=f"starter_{i}", use_container_width=True):
                 st.session_state.chat_history.append({"role": "user", "content": starter})
-                reply = chat_with_inbox(
-                    user_message=starter,
-                    email_context=st.session_state.email_context,
-                    history=[],
-                    user_name=st.session_state.user_name,
-                )
+                with st.spinner("Thinking..."):
+                    reply = chat_with_inbox(
+                        user_message=starter,
+                        email_context=st.session_state.email_context,
+                        history=[],
+                        user_name=st.session_state.user_name,
+                    )
                 st.session_state.chat_history.append({"role": "assistant", "content": reply})
                 st.rerun()
 
