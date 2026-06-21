@@ -55,6 +55,65 @@ Return ONLY valid JSON, no explanation. Example:
         return [None] * len(emails), [None] * len(emails)
 
 
+def build_email_context(classified):
+    """Build a compact inbox context string for the chat system prompt."""
+    from collections import Counter
+    counts = Counter(cat for _, cat in classified)
+
+    lines = [
+        "INBOX SUMMARY:",
+        f"- Important: {counts.get('Important', 0)} emails",
+        f"- Promotions: {counts.get('Promotions', 0)} emails",
+        f"- Spam: {counts.get('Spam', 0)} emails",
+        f"- Other: {counts.get('Other', 0)} emails",
+        f"\nEMAILS (up to 60, most recent first):",
+    ]
+
+    for i, (email, cat) in enumerate(classified[:60], 1):
+        sender  = email.get("From", "")[:50]
+        subject = email.get("Subject", "")[:80]
+        snippet = email.get("snippet", "")[:100]
+        lines.append(f"{i}. [{cat}] From: {sender} | Subject: {subject} | Preview: {snippet}")
+
+    return "\n".join(lines)
+
+
+def chat_with_inbox(user_message, email_context, history, user_name):
+    """
+    Multi-turn chat about the inbox.
+    history: list of {role, content} dicts (excludes current message).
+    Returns assistant reply string.
+    """
+    system_prompt = f"""You are a smart, friendly AI email assistant for {user_name}.
+You have full access to their Gmail inbox data shown below.
+
+{email_context}
+
+Guidelines:
+- Answer concisely and helpfully
+- When listing emails, show sender + subject + category
+- Give specific, actionable recommendations when asked
+- If asked "what should I do today?", prioritise Important emails with action items
+- Keep replies under 200 words unless the user asks for detail
+- Be warm and personal — you know their inbox well"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for msg in history[-12:]:
+        messages.append(msg)
+    messages.append({"role": "user", "content": user_message})
+
+    try:
+        resp = _client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages,
+            max_tokens=600,
+            temperature=0.5,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Sorry, something went wrong: {e}"
+
+
 def classify_emails_batch(emails):
     """
     AI-powered batch classification of emails.

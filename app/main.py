@@ -23,7 +23,7 @@ except Exception:
     save_waitlist = None
 
 try:
-    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox
     from app.ai.weekly_report import generate_weekly_report
     AI_AVAILABLE = True
 except Exception:
@@ -362,7 +362,7 @@ def load_emails():
     return st.session_state.cached_classified
 
 # ── Sidebar navigation ───────────────────────────────────────────────
-PAGES = ["📊 Dashboard", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
+PAGES = ["📊 Dashboard", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
 
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "📊 Dashboard"
@@ -466,6 +466,68 @@ if page == "📊 Dashboard":
         index=["Important", "Promotions", "Spam", "Other"]
     ), color="#F97B4F")
     st.caption(f"Total estimated: **{format_size(total)}** across last {len(classified)} emails")
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Chat
+# ════════════════════════════════════════════════════════════════════
+elif page == "💬 Chat":
+    classified = load_emails()
+
+    st.title("💬 AI Chat")
+    st.caption("Ask anything about your inbox — in plain English")
+
+    if not AI_AVAILABLE:
+        st.error("AI not available — check your Groq API key in secrets.")
+        st.stop()
+
+    # Suggested starters
+    starters = [
+        "What should I focus on today?",
+        "Which emails need a reply?",
+        "Summarise my important emails",
+        "Who sends me the most promotions?",
+        "Do I have any payment reminders?",
+    ]
+    st.markdown(" &nbsp;·&nbsp; ".join(f"`{s}`" for s in starters))
+    st.divider()
+
+    # Initialize chat history
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # Build email context once per session
+    if "email_context" not in st.session_state:
+        st.session_state.email_context = build_email_context(classified)
+
+    # Display existing messages
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Ask about your inbox..."):
+        # Show user message immediately
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+        # Get AI reply
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                reply = chat_with_inbox(
+                    user_message=prompt,
+                    email_context=st.session_state.email_context,
+                    history=st.session_state.chat_history[:-1],
+                    user_name=st.session_state.user_name,
+                )
+            st.markdown(reply)
+        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+
+    # Clear chat button
+    if st.session_state.chat_history:
+        if st.button("🗑️ Clear chat", key="clear_chat"):
+            st.session_state.chat_history = []
+            st.rerun()
 
 # ════════════════════════════════════════════════════════════════════
 # PAGE: Search
@@ -669,7 +731,7 @@ elif page == "⚙️ Settings":
     st.subheader("🔄 Refresh Data")
     st.caption("Emails are cached for your session. Click to reload from Gmail.")
     if st.button("Refresh Inbox Data"):
-        for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing", "weekly_report"]:
+        for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing", "weekly_report", "email_context", "chat_history"]:
             st.session_state.pop(key, None)
         st.success("Cache cleared — go to Dashboard or Inbox to reload.")
 
