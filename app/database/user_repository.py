@@ -2,6 +2,16 @@ from datetime import datetime, timezone
 from app.database.supabase_client import get_supabase
 
 
+def save_feedback(email: str, feedback_type: str, message: str):
+    supabase = get_supabase()
+    supabase.table("feedback").insert({
+        "email": email,
+        "type": feedback_type,
+        "message": message,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }).execute()
+
+
 def save_waitlist(email: str, name: str = ""):
     supabase = get_supabase()
     response = (

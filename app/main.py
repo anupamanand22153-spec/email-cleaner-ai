@@ -15,12 +15,13 @@ from app.gmail2.gmail_service import get_gmail_service, fetch_email_metadata
 from app.logic.email_classifier import classify_email
 
 try:
-    from app.database.user_repository import save_user, save_waitlist
+    from app.database.user_repository import save_user, save_waitlist, save_feedback
     DB_AVAILABLE = True
 except Exception:
     DB_AVAILABLE = False
     save_user = None
     save_waitlist = None
+    save_feedback = None
 
 try:
     from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox, detect_action_emails, extract_tasks
@@ -361,6 +362,78 @@ def load_emails():
             st.stop()
     return st.session_state.cached_classified
 
+# ── Feedback dialog ──────────────────────────────────────────────────
+@st.dialog("💬 Send Feedback")
+def feedback_dialog():
+    st.markdown("Help us make Email Cleaner AI better.")
+    fb_type = st.selectbox("Type", ["Bug Report", "Feature Request", "General Feedback"])
+    msg = st.text_area("Your message", placeholder="Tell us what's on your mind...", height=120)
+    if st.button("Send Feedback", type="primary", use_container_width=True):
+        if msg.strip():
+            try:
+                if DB_AVAILABLE and save_feedback:
+                    save_feedback(st.session_state.user_email, fb_type, msg.strip())
+                st.success("Thanks! We got your feedback.")
+            except Exception:
+                st.success("Thanks! (Feedback noted.)")
+        else:
+            st.warning("Please write something first.")
+
+
+# ── Onboarding dialog ─────────────────────────────────────────────────
+ONBOARDING_STEPS = [
+    ("👋 Welcome to Email Cleaner AI!",
+     "Your inbox is about to get a lot smarter. This quick tour shows you what you can do.\n\n**It takes less than a minute.**"),
+    ("📊 Dashboard",
+     "See your inbox broken down by category — Important, Promotions, Spam, and Other.\n\nYou also get a **personalized AI briefing** every day."),
+    ("⚡ Action Center",
+     "AI scans your inbox and highlights:\n- **Emails that need a reply**\n- **Urgent items** with deadlines or time-sensitive content"),
+    ("✅ Task List",
+     "AI reads your emails and pulls out **specific to-dos** — things you need to reply to, confirm, pay, or submit.\n\nCheck them off as you go."),
+    ("💬 AI Chat",
+     "Ask your inbox anything in plain English:\n- *\"What should I focus on today?\"*\n- *\"Do I have any payment reminders?\"*\n- *\"Who emails me the most?\"*"),
+    ("🔍 Search & More",
+     "Use **natural language search** to find any email instantly.\n\nExplore **Unsubscribe suggestions**, **Weekly Reports**, and **Settings** in the sidebar.\n\n**You're all set!** 🚀"),
+]
+
+@st.dialog("👋 Welcome to Email Cleaner AI!", width="large")
+def onboarding_dialog():
+    step = st.session_state.get("onboarding_step", 0)
+    total = len(ONBOARDING_STEPS)
+    title, body = ONBOARDING_STEPS[step]
+
+    st.progress((step + 1) / total, text=f"Step {step + 1} of {total}")
+    st.markdown(f"### {title}")
+    st.markdown(body)
+    st.divider()
+
+    left, right = st.columns(2)
+    if step > 0:
+        if left.button("← Back", use_container_width=True):
+            st.session_state.onboarding_step = step - 1
+            st.rerun()
+    if step < total - 1:
+        if right.button("Next →", type="primary", use_container_width=True):
+            st.session_state.onboarding_step = step + 1
+            st.rerun()
+    else:
+        if right.button("Get Started 🚀", type="primary", use_container_width=True):
+            st.session_state.onboarding_done = True
+            st.rerun()
+    if st.button("Skip tour", use_container_width=False):
+        st.session_state.onboarding_done = True
+        st.rerun()
+
+
+# Trigger onboarding for first-time users in this session
+if "onboarding_done" not in st.session_state:
+    st.session_state.onboarding_done = False
+    st.session_state.onboarding_step = 0
+
+if not st.session_state.onboarding_done:
+    onboarding_dialog()
+
+
 # ── Sidebar navigation ───────────────────────────────────────────────
 PAGES = ["📊 Dashboard", "⚡ Action Center", "✅ Tasks", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
 
@@ -381,6 +454,8 @@ with st.sidebar:
     )
     st.session_state.nav_page = page
     st.divider()
+    if st.button("💬 Send Feedback", use_container_width=True):
+        feedback_dialog()
     if st.button("Sign Out", use_container_width=True):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
@@ -874,6 +949,14 @@ elif page == "⚙️ Settings":
         for key in ["cached_classified", "ai_summaries", "ai_actions", "daily_briefing", "weekly_report", "email_context", "chat_history"]:
             st.session_state.pop(key, None)
         st.success("Cache cleared — go to Dashboard or Inbox to reload.")
+
+    st.divider()
+    st.subheader("👋 App Tour")
+    st.caption("See the welcome tour again to explore all features.")
+    if st.button("Replay Tour"):
+        st.session_state.onboarding_done = False
+        st.session_state.onboarding_step = 0
+        st.rerun()
 
     st.divider()
     st.subheader("🔒 Privacy & Data")
