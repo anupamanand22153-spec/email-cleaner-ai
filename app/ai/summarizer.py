@@ -303,6 +303,56 @@ Rules:
         return []
 
 
+def detect_calendar_events(emails):
+    """
+    Detects emails that contain meetings, interviews, deadlines, or scheduled events.
+    Returns list of {email_index, title, date_hint, time_hint, description, sender}
+    """
+    email_block = _email_lines(emails[:60])
+    prompt = f"""You are a calendar assistant. Find emails that contain meetings, interviews, calls, appointments, deadlines, or scheduled events that the user should add to their calendar.
+
+Emails:
+{email_block}
+
+Return ONLY valid JSON — an array of event objects:
+[
+  {{
+    "email_index": 0,
+    "title": "Short event title (max 8 words)",
+    "date_hint": "Date mentioned e.g. June 25 2025 or null",
+    "time_hint": "Time mentioned e.g. 10:00 AM or null",
+    "description": "Brief context from the email (max 20 words)",
+    "sender": "sender name or email"
+  }}
+]
+
+Rules:
+- email_index is 0-based
+- Only include emails with a clear scheduled event or deadline
+- Skip promotions, newsletters, and generic emails
+- If no date/time is mentioned set them to null
+- Max 10 events, most urgent first
+- Return empty array [] if nothing qualifies
+- No explanation, just JSON"""
+
+    try:
+        resp = _client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        events = json.loads(text.strip())
+        return events if isinstance(events, list) else []
+    except Exception:
+        return []
+
+
 def generate_daily_briefing(user_name, classified):
     """Returns a personalized morning briefing string."""
     from collections import Counter

@@ -24,7 +24,7 @@ except Exception:
     save_feedback = None
 
 try:
-    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox, detect_action_emails, extract_tasks
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox, detect_action_emails, extract_tasks, detect_calendar_events
     from app.ai.weekly_report import generate_weekly_report
     AI_AVAILABLE = True
 except Exception:
@@ -435,7 +435,9 @@ if not st.session_state.onboarding_done:
 
 
 # ── Sidebar navigation ───────────────────────────────────────────────
-PAGES = ["📊 Dashboard", "⚡ Action Center", "✅ Tasks", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
+FOUNDER_EMAIL = "anupamanand2215@gmail.com"
+PAGES = ["📊 Dashboard", "⚡ Action Center", "✅ Tasks", "📅 Calendar", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
+FOUNDER_PAGES = PAGES + ["📈 Analytics"]
 
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "📊 Dashboard"
@@ -445,10 +447,13 @@ with st.sidebar:
     st.markdown(f"👤 **{st.session_state.user_name}**")
     st.caption(st.session_state.user_email)
     st.divider()
+    _nav_pages = FOUNDER_PAGES if st.session_state.user_email == FOUNDER_EMAIL else PAGES
+    if st.session_state.nav_page not in _nav_pages:
+        st.session_state.nav_page = "📊 Dashboard"
     page = st.radio(
         "Navigation",
-        PAGES,
-        index=PAGES.index(st.session_state.nav_page),
+        _nav_pages,
+        index=_nav_pages.index(st.session_state.nav_page),
         key="sidebar_nav",
         label_visibility="collapsed"
     )
@@ -929,6 +934,122 @@ elif page == "📋 Weekly Report":
         if st.button("🔄 Regenerate Report"):
             st.session_state.pop("weekly_report", None)
             st.rerun()
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Calendar
+# ════════════════════════════════════════════════════════════════════
+elif page == "📅 Calendar":
+    classified = load_emails()
+    emails = [e for e, _ in classified]
+
+    st.title("📅 Calendar Events")
+    st.caption("Meetings, interviews, and deadlines detected from your inbox")
+
+    if not AI_AVAILABLE:
+        st.error("AI not available — check your Groq API key in secrets.")
+        st.stop()
+
+    if st.button("🔄 Re-scan emails", type="primary"):
+        st.session_state.pop("calendar_events", None)
+
+    if "calendar_events" not in st.session_state:
+        with st.spinner("Scanning for meetings and deadlines..."):
+            st.session_state.calendar_events = detect_calendar_events(emails)
+
+    events = st.session_state.calendar_events
+
+    if not events:
+        st.info("No meetings or deadlines detected in your recent emails.")
+    else:
+        st.success(f"Found **{len(events)}** event(s) in your inbox")
+        st.divider()
+        for ev in events:
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                col1.markdown(f"### {ev.get('title', 'Event')}")
+                col1.caption(f"From: {ev.get('sender', '')}  ·  {ev.get('description', '')}")
+
+                date_hint = ev.get("date_hint") or ""
+                time_hint = ev.get("time_hint") or ""
+                if date_hint or time_hint:
+                    col1.markdown(f"📅 {date_hint}  {'🕐 ' + time_hint if time_hint else ''}")
+
+                # Build Google Calendar quick-add URL
+                title_enc = urllib.parse.quote(ev.get("title", "Event"))
+                details_enc = urllib.parse.quote(ev.get("description", ""))
+                cal_url = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={title_enc}&details={details_enc}"
+                col2.link_button("Add to Calendar", cal_url, type="primary", use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Analytics (Founder only)
+# ════════════════════════════════════════════════════════════════════
+elif page == "📈 Analytics":
+    if st.session_state.user_email != FOUNDER_EMAIL:
+        st.error("Access denied.")
+        st.stop()
+
+    st.title("📈 Founder Analytics")
+    st.caption("Only visible to you")
+
+    if not DB_AVAILABLE:
+        st.error("Database not available.")
+        st.stop()
+
+    from app.database.supabase_client import get_supabase
+    db = get_supabase()
+
+    # ── Users ──────────────────────────────────────────────────────
+    try:
+        users_resp    = db.table("users").select("*").order("last_login", desc=True).execute()
+        users         = users_resp.data or []
+    except Exception:
+        users = []
+
+    # ── Feedback ───────────────────────────────────────────────────
+    try:
+        feedback_resp = db.table("feedback").select("*").order("created_at", desc=True).execute()
+        feedbacks     = feedback_resp.data or []
+    except Exception:
+        feedbacks = []
+
+    # ── Waitlist ───────────────────────────────────────────────────
+    try:
+        waitlist_resp = db.table("waitlist").select("*").execute()
+        waitlist      = waitlist_resp.data or []
+    except Exception:
+        waitlist = []
+
+    # ── Metrics ────────────────────────────────────────────────────
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Users", len(users))
+    c2.metric("Feedback Received", len(feedbacks))
+    c3.metric("Waitlist Signups", len(waitlist))
+    st.divider()
+
+    # ── Recent Users ───────────────────────────────────────────────
+    st.subheader("👥 Recent Users")
+    if users:
+        user_rows = [{"Name": u.get("full_name",""), "Email": u.get("email",""), "Last Login": u.get("last_login","")[:10] if u.get("last_login") else ""} for u in users[:20]]
+        st.dataframe(user_rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("No users yet.")
+
+    st.divider()
+
+    # ── Feedback ───────────────────────────────────────────────────
+    st.subheader("💬 User Feedback")
+    if feedbacks:
+        for fb in feedbacks:
+            with st.container(border=True):
+                cols = st.columns([1, 4])
+                cols[0].markdown(f"**{fb.get('type','')}**")
+                cols[0].caption(fb.get("email",""))
+                cols[0].caption((fb.get("created_at") or "")[:10])
+                cols[1].markdown(fb.get("message",""))
+    else:
+        st.info("No feedback yet.")
+
 
 # ════════════════════════════════════════════════════════════════════
 # PAGE: Settings
