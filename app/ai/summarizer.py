@@ -205,6 +205,104 @@ Rules:
         return f"Search failed: {e}", []
 
 
+def detect_action_emails(emails):
+    """
+    Identifies emails that need a reply and/or are urgent.
+    Returns:
+        needs_reply: list of {index, sender, subject, reason}
+        urgent:      list of {index, sender, subject, reason}
+    """
+    email_block = _email_lines(emails[:60])
+    prompt = f"""You are an expert email analyst. Analyse these emails and identify:
+1. Emails that clearly NEED A REPLY (someone is waiting for a response, asked a question, sent an invitation, requested action)
+2. Emails that are URGENT (deadlines, OTPs expiring, time-sensitive requests, payment due, interview scheduled soon, etc.)
+
+Emails:
+{email_block}
+
+Return ONLY valid JSON with this exact structure:
+{{
+  "needs_reply": [
+    {{"index": 0, "sender": "name/email", "subject": "subject text", "reason": "why it needs a reply (max 10 words)"}}
+  ],
+  "urgent": [
+    {{"index": 0, "sender": "name/email", "subject": "subject text", "reason": "why it's urgent (max 10 words)"}}
+  ]
+}}
+
+Rules:
+- index is 0-based (email 1 = index 0)
+- Only include emails that clearly match — do not guess
+- An email can appear in both lists
+- Return empty arrays if nothing qualifies
+- No explanation, just JSON"""
+
+    try:
+        resp = _client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
+        return data.get("needs_reply", []), data.get("urgent", [])
+    except Exception:
+        return [], []
+
+
+def extract_tasks(emails):
+    """
+    Extracts actionable to-do items from emails.
+    Returns list of {task, sender, subject, due_hint, email_index}
+    """
+    email_block = _email_lines(emails[:60])
+    prompt = f"""You are a productivity assistant. Extract specific actionable TO-DO tasks from these emails.
+
+Emails:
+{email_block}
+
+Return ONLY valid JSON — an array of task objects:
+[
+  {{
+    "task": "Clear action the user needs to take (max 15 words)",
+    "sender": "who sent it",
+    "subject": "email subject",
+    "due_hint": "deadline or time hint if mentioned, else null",
+    "email_index": 0
+  }}
+]
+
+Rules:
+- email_index is 0-based
+- Only extract REAL tasks the user must do (reply, confirm, pay, submit, review, schedule, etc.)
+- Skip newsletters, promotions, spam — only include emails requiring user action
+- Max 15 tasks total, most important first
+- If no tasks found return empty array []
+- No explanation, just JSON"""
+
+    try:
+        resp = _client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1200,
+            temperature=0.2,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        tasks = json.loads(text.strip())
+        return tasks if isinstance(tasks, list) else []
+    except Exception:
+        return []
+
+
 def generate_daily_briefing(user_name, classified):
     """Returns a personalized morning briefing string."""
     from collections import Counter

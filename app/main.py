@@ -23,7 +23,7 @@ except Exception:
     save_waitlist = None
 
 try:
-    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox
+    from app.ai.summarizer import summarize_and_extract, generate_daily_briefing, search_emails, classify_emails_batch, build_email_context, chat_with_inbox, detect_action_emails, extract_tasks
     from app.ai.weekly_report import generate_weekly_report
     AI_AVAILABLE = True
 except Exception:
@@ -362,7 +362,7 @@ def load_emails():
     return st.session_state.cached_classified
 
 # ── Sidebar navigation ───────────────────────────────────────────────
-PAGES = ["📊 Dashboard", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
+PAGES = ["📊 Dashboard", "⚡ Action Center", "✅ Tasks", "💬 Chat", "🔍 Search", "📨 Inbox", "🚫 Unsubscribe", "📋 Weekly Report", "⚙️ Settings"]
 
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "📊 Dashboard"
@@ -466,6 +466,132 @@ if page == "📊 Dashboard":
         index=["Important", "Promotions", "Spam", "Other"]
     ), color="#F97B4F")
     st.caption(f"Total estimated: **{format_size(total)}** across last {len(classified)} emails")
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Action Center
+# ════════════════════════════════════════════════════════════════════
+elif page == "⚡ Action Center":
+    classified = load_emails()
+    emails = [e for e, _ in classified]
+
+    st.title("⚡ Action Center")
+    st.caption("Emails that need your attention — replies due and urgent items")
+
+    if not AI_AVAILABLE:
+        st.error("AI not available — check your Groq API key in secrets.")
+        st.stop()
+
+    if st.button("🔄 Scan my inbox", type="primary"):
+        st.session_state.pop("action_needs_reply", None)
+        st.session_state.pop("action_urgent", None)
+
+    if "action_needs_reply" not in st.session_state:
+        with st.spinner("Scanning your inbox for action items..."):
+            needs_reply, urgent = detect_action_emails(emails)
+            st.session_state.action_needs_reply = needs_reply
+            st.session_state.action_urgent = urgent
+
+    needs_reply = st.session_state.action_needs_reply
+    urgent      = st.session_state.action_urgent
+
+    col1, col2 = st.columns(2)
+    col1.metric("Needs Reply", len(needs_reply))
+    col2.metric("Urgent", len(urgent))
+    st.divider()
+
+    st.subheader("📬 Needs a Reply")
+    if needs_reply:
+        for item in needs_reply:
+            with st.container(border=True):
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"**{item.get('subject', '(no subject)')}**")
+                c1.caption(f"From: {item.get('sender', '')}")
+                c2.markdown(f"💬 *{item.get('reason', '')}*")
+    else:
+        st.success("No emails need a reply right now.")
+
+    st.divider()
+    st.subheader("🚨 Urgent")
+    if urgent:
+        for item in urgent:
+            with st.container(border=True):
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"**{item.get('subject', '(no subject)')}**")
+                c1.caption(f"From: {item.get('sender', '')}")
+                c2.markdown(f"⏰ *{item.get('reason', '')}*")
+    else:
+        st.success("No urgent emails found.")
+
+
+# ════════════════════════════════════════════════════════════════════
+# PAGE: Tasks
+# ════════════════════════════════════════════════════════════════════
+elif page == "✅ Tasks":
+    classified = load_emails()
+    emails = [e for e, _ in classified]
+
+    st.title("✅ Task List")
+    st.caption("To-dos extracted from your inbox by AI")
+
+    if not AI_AVAILABLE:
+        st.error("AI not available — check your Groq API key in secrets.")
+        st.stop()
+
+    if st.button("🔄 Re-scan for tasks", type="primary"):
+        st.session_state.pop("extracted_tasks", None)
+        st.session_state.pop("checked_tasks", None)
+
+    if "extracted_tasks" not in st.session_state:
+        with st.spinner("Extracting tasks from your emails..."):
+            st.session_state.extracted_tasks = extract_tasks(emails)
+
+    if "checked_tasks" not in st.session_state:
+        st.session_state.checked_tasks = set()
+
+    tasks = st.session_state.extracted_tasks
+
+    if not tasks:
+        st.info("No actionable tasks found in your inbox.")
+    else:
+        done   = len(st.session_state.checked_tasks)
+        total  = len(tasks)
+        st.progress(done / total if total else 0, text=f"{done}/{total} tasks done")
+        st.divider()
+
+        pending   = [t for i, t in enumerate(tasks) if i not in st.session_state.checked_tasks]
+        completed = [t for i, t in enumerate(tasks) if i     in st.session_state.checked_tasks]
+
+        if pending:
+            st.subheader("📌 Pending")
+            for i, task in enumerate(tasks):
+                if i in st.session_state.checked_tasks:
+                    continue
+                with st.container(border=True):
+                    cols = st.columns([0.07, 0.93])
+                    checked = cols[0].checkbox("", key=f"task_{i}", value=False)
+                    if checked:
+                        st.session_state.checked_tasks.add(i)
+                        st.rerun()
+                    cols[1].markdown(f"**{task.get('task', '')}**")
+                    due = task.get("due_hint")
+                    meta = f"From: {task.get('sender', '')}  ·  {task.get('subject', '')}"
+                    if due:
+                        meta += f"  ·  ⏰ {due}"
+                    cols[1].caption(meta)
+
+        if completed:
+            with st.expander(f"✅ Completed ({len(completed)})"):
+                for i, task in enumerate(tasks):
+                    if i not in st.session_state.checked_tasks:
+                        continue
+                    cols = st.columns([0.07, 0.93])
+                    unchecked = cols[0].checkbox("", key=f"task_done_{i}", value=True)
+                    if not unchecked:
+                        st.session_state.checked_tasks.discard(i)
+                        st.rerun()
+                    cols[1].markdown(f"~~{task.get('task', '')}~~")
+                    cols[1].caption(f"From: {task.get('sender', '')}  ·  {task.get('subject', '')}")
+
 
 # ════════════════════════════════════════════════════════════════════
 # PAGE: Chat
