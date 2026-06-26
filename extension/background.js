@@ -1,6 +1,6 @@
 // ── Config ────────────────────────────────────────────────────────────
-const CLIENT_ID   = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'; // Replace after Google Cloud setup
-const BACKEND_URL = 'https://your-backend.railway.app';                 // Replace after backend deployment
+const CLIENT_ID   = '486540453340-j9f2flk9bljubomqm9im8mma3t7i3v3t.apps.googleusercontent.com';
+const BACKEND_URL = 'https://email-cleaner-ai-production-ae95.up.railway.app';
 const SCOPES      = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
