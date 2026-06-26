@@ -57,16 +57,36 @@ def health():
 @app.post("/api/chat")
 def chat(req: ChatRequest):
     context = build_context(req.emails)
-    system = f"""You are a smart AI email assistant for {req.userName}.
-You have access to their inbox shown below.
+    system = f"""You are an elite AI email chief of staff for {req.userName}. You have deep expertise in email triage and human communication patterns.
 
+INBOX DATA:
 {context}
 
-Guidelines:
-- Answer concisely in 1-3 short paragraphs
-- Reference specific emails when relevant
-- Give actionable recommendations
-- Be warm and personal"""
+CORE INTELLIGENCE RULES:
+
+1. NEVER-REPLY emails (automated systems, not humans):
+   - Sender contains: noreply, no-reply, donotreply, notifications, alerts, mailer, newsletter, updates, support@, info@, hello@company
+   - OTP / verification codes, bank transaction alerts, order confirmations, shipping updates
+   - Marketing emails, promotional offers, discount codes, newsletters
+   - Social media notifications (LinkedIn, Twitter, Instagram)
+   - Automated receipts, invoices from services
+
+2. NEEDS-REPLY emails (real human expects a response):
+   - A real person directly asked you a question
+   - Someone invited you to something and is waiting for your confirmation
+   - A colleague, client, or friend sent a personal message
+   - A job recruiter or interviewer reached out
+   - Someone explicitly said "please respond", "let me know", "waiting for your reply"
+
+3. SMART REASONING:
+   - Read the snippet carefully — does a human need your response, or is this just FYI?
+   - Prioritize by urgency + relationship (boss > colleague > stranger > company)
+   - Be concise and direct — {req.userName} is busy
+
+4. FORMAT:
+   - When listing emails, always include: From, Subject, why it needs action
+   - Never recommend replying to automated emails
+   - If nothing truly needs a reply, say so confidently"""
 
     messages = [{"role": "system", "content": system}]
     for h in req.history[-8:]:
@@ -75,7 +95,7 @@ Guidelines:
 
     try:
         resp = groq_client().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=messages,
             max_tokens=500,
             temperature=0.5,
@@ -87,24 +107,24 @@ Guidelines:
 
 @app.post("/api/draft-reply")
 def draft_reply(req: DraftReplyRequest):
-    prompt = f"""Write a professional, friendly email reply on behalf of {req.userName}.
+    prompt = f"""You are writing an email reply on behalf of {req.userName}. Write like a real human, not a corporate robot.
 
 Original email:
 - From: {req.emailFrom}
 - Subject: {req.emailSubject}
-- Content preview: {req.emailSnippet}
+- Content: {req.emailSnippet}
 
 Rules:
-- Start with an appropriate greeting
-- Keep it concise (3-5 sentences max)
-- Sound natural, not robotic
-- End with a polite sign-off using {req.userName}'s name
-- Do not add placeholders like [Your Name]
-- Return ONLY the email body, no subject line"""
+- Sound natural and warm, like how {req.userName} would actually write
+- Be concise — 3-5 sentences maximum
+- Address the specific question or request in the email
+- Do NOT use filler phrases like "I hope this email finds you well" or "Please don't hesitate"
+- Do NOT add placeholders like [Your Name] — sign off as {req.userName}
+- Return ONLY the email body text, nothing else"""
 
     try:
         resp = groq_client().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=350,
             temperature=0.6,
@@ -130,7 +150,7 @@ Be concise — max 10 words per bullet."""
 
     try:
         resp = groq_client().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0.4,
