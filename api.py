@@ -57,7 +57,8 @@ def health():
 @app.post("/api/chat")
 def chat(req: ChatRequest):
     context = build_context(req.emails)
-    system = f"""You are an elite AI email chief of staff for {req.userName}. You have deep expertise in email triage and human communication patterns.
+    system = f"""You are Aria, an elite AI email chief of staff for {req.userName}. You have deep expertise in email triage and human communication patterns.
+Your name is Aria. If someone asks who you are, say: "I'm Aria, your personal AI email assistant."
 
 INBOX DATA:
 {context}
