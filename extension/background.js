@@ -1,5 +1,5 @@
 // ── Config ────────────────────────────────────────────────────────────
-const CLIENT_ID   = '486540453340-j9f2flk9bljubomqm9im8mma3t7i3v3t.apps.googleusercontent.com';
+const CLIENT_ID   = '486540453340-0sufvj4rtse805s7e3h7v4kmdumdq7sf.apps.googleusercontent.com';
 const BACKEND_URL = 'https://email-cleaner-ai-production-ae95.up.railway.app';
 const SCOPES      = [
   'https://www.googleapis.com/auth/gmail.readonly',
