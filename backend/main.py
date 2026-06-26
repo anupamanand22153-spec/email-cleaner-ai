@@ -9,9 +9,11 @@ app = FastAPI(title="Email Cleaner AI Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to your extension origin in production
-    allow_methods=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 def client():
