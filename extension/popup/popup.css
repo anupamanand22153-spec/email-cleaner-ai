@@ -1,0 +1,52 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: 280px; font-family: 'Google Sans', Roboto, sans-serif; font-size: 14px; color: #1f2937; }
+
+.popup { padding: 1rem; }
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 1rem;
+}
+.logo    { font-size: 1.6rem; }
+.title   { font-weight: 700; font-size: 0.95rem; color: #1E3A8A; }
+.subtitle { font-size: 0.75rem; color: #6b7280; }
+
+.info { font-size: 0.85rem; color: #6b7280; margin-bottom: 0.75rem; line-height: 1.5; }
+
+.user-info { background: #EFF6FF; border-radius: 8px; padding: 0.65rem; margin-bottom: 0.75rem; }
+.user-email { font-size: 0.82rem; color: #1E3A8A; font-weight: 500; }
+.connected-badge { font-size: 0.75rem; color: #059669; margin-top: 0.2rem; }
+
+.btn-primary {
+  width: 100%;
+  padding: 0.65rem;
+  background: #2563EB;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: #1d4ed8; }
+
+.btn-secondary {
+  width: 100%;
+  padding: 0.6rem;
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-secondary:hover { background: #e5e7eb; }
+
+.hidden { display: none !important; }

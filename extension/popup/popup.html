@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Email Cleaner AI</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup">
+    <div class="header">
+      <span class="logo">✉️</span>
+      <div>
+        <div class="title">Email Cleaner AI</div>
+        <div class="subtitle" id="status-text">Checking connection...</div>
+      </div>
+    </div>
+
+    <div id="signed-out" class="hidden">
+      <p class="info">Connect your Gmail to get started.</p>
+      <button id="connect-btn" class="btn-primary">Connect Gmail</button>
+    </div>
+
+    <div id="signed-in" class="hidden">
+      <div class="user-info">
+        <div class="user-email" id="user-email"></div>
+        <div class="connected-badge">✅ Connected</div>
+      </div>
+      <p class="info">Open Gmail to use your AI assistant.</p>
+      <button id="open-gmail-btn" class="btn-primary">Open Gmail</button>
+      <button id="signout-btn" class="btn-secondary">Sign Out</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

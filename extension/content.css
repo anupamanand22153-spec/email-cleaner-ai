@@ -1,0 +1,4 @@
+/* Prevent Gmail layout shifts when sidebar opens */
+#ecai-sidebar {
+  font-family: 'Google Sans', Roboto, sans-serif;
+}

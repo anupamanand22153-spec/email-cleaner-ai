@@ -1,0 +1,281 @@
+// ── State ─────────────────────────────────────────────────────────────
+let state = {
+  userInfo:    null,
+  emails:      [],
+  chatHistory: [],
+  summaryLoaded: false,
+  actionsLoaded: false,
+};
+
+// ── Boot ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  const auth = await msg({ type: 'GET_AUTH_STATUS' });
+  if (auth.authenticated) {
+    state.userInfo = auth.userInfo;
+    showApp();
+    loadEmails();
+  } else {
+    showLogin();
+  }
+  bindEvents();
+});
+
+// ── Auth ──────────────────────────────────────────────────────────────
+function showLogin() { show('login-screen'); hide('app-screen'); }
+function showApp()   { hide('login-screen'); show('app-screen'); }
+
+document.getElementById('connect-btn').addEventListener('click', async () => {
+  showOverlay('Connecting to Gmail...');
+  const result = await msg({ type: 'AUTH' });
+  hideOverlay();
+  if (result.success) {
+    state.userInfo = result.userInfo;
+    showApp();
+    loadEmails();
+  } else {
+    alert('Connection failed. Please try again.');
+  }
+});
+
+// ── Load Emails ───────────────────────────────────────────────────────
+async function loadEmails() {
+  document.getElementById('header-user').textContent = state.userInfo?.email || '';
+  showOverlay('Reading your inbox...');
+  const result = await msg({ type: 'FETCH_EMAILS', maxResults: 50 });
+  hideOverlay();
+  if (result.success) {
+    state.emails = result.emails;
+    renderSummary();
+    renderActions();
+  }
+}
+
+// ── Events ────────────────────────────────────────────────────────────
+function bindEvents() {
+  // Tabs
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // Chat send
+  document.getElementById('chat-send').addEventListener('click', sendChat);
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+
+  // Chat starters
+  document.querySelectorAll('.starter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('chat-input').value = btn.dataset.q;
+      sendChat();
+    });
+  });
+
+  // Refresh
+  document.getElementById('refresh-btn').addEventListener('click', () => {
+    state.summaryLoaded = false;
+    state.actionsLoaded = false;
+    state.chatHistory   = [];
+    loadEmails();
+  });
+
+  // Close
+  document.getElementById('close-btn').addEventListener('click', () => {
+    window.parent.postMessage({ type: 'ECAI_CLOSE_SIDEBAR' }, '*');
+  });
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === `tab-${tabName}`);
+    c.classList.toggle('hidden', c.id !== `tab-${tabName}`);
+  });
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const query = input.value.trim();
+  if (!query) return;
+
+  input.value = '';
+  hide('chat-starters');
+
+  appendMessage('user', query);
+  state.chatHistory.push({ role: 'user', content: query });
+
+  const thinkingId = appendMessage('ai', '⟳ Thinking...');
+
+  const result = await msg({
+    type:     'CHAT',
+    query,
+    emails:   state.emails.slice(0, 30),
+    history:  state.chatHistory.slice(-8),
+    userName: state.userInfo?.name || 'there',
+  });
+
+  const reply = result.success ? result.reply : 'Sorry, something went wrong. Please try again.';
+  updateMessage(thinkingId, reply);
+  state.chatHistory.push({ role: 'assistant', content: reply });
+}
+
+function appendMessage(role, text) {
+  const id       = `msg-${Date.now()}`;
+  const messages = document.getElementById('chat-messages');
+  const div      = document.createElement('div');
+  div.className  = `${role === 'ai' ? 'ai' : 'user'}-message`;
+  div.innerHTML  = `<div class="message-bubble ${role}" id="${id}">${escapeHtml(text)}</div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return id;
+}
+
+function updateMessage(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+  document.getElementById('chat-messages').scrollTop = 99999;
+}
+
+// ── Summary ───────────────────────────────────────────────────────────
+function renderSummary() {
+  const emails   = state.emails;
+  const cats     = { Important: 0, Promotions: 0, Spam: 0, Other: 0 };
+  const keywords = {
+    Important:  ['invoice', 'payment', 'receipt', 'otp', 'verify', 'bank', 'urgent', 'job', 'offer', 'interview', 'meeting', 'appointment', 'order', 'shipped', 'booking'],
+    Promotions: ['sale', '% off', 'discount', 'deal', 'offer', 'promo', 'newsletter', 'unsubscribe', 'coupon'],
+    Spam:       ['won', 'winner', 'lottery', 'prize', 'click here', 'earn money', 'free gift', 'guaranteed'],
+  };
+
+  emails.forEach(e => {
+    const text = `${e.subject} ${e.snippet}`.toLowerCase();
+    if (keywords.Spam.some(k => text.includes(k)))       cats.Spam++;
+    else if (keywords.Important.some(k => text.includes(k))) cats.Important++;
+    else if (keywords.Promotions.some(k => text.includes(k))) cats.Promotions++;
+    else cats.Other++;
+  });
+
+  const important = emails.filter(e => {
+    const t = `${e.subject} ${e.snippet}`.toLowerCase();
+    return keywords.Important.some(k => t.includes(k));
+  }).slice(0, 5);
+
+  const html = `
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-num" style="color:#059669">${cats.Important}</div><div class="stat-label">Important</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#d97706">${cats.Promotions}</div><div class="stat-label">Promotions</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#dc2626">${cats.Spam}</div><div class="stat-label">Spam</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:#6b7280">${cats.Other}</div><div class="stat-label">Other</div></div>
+    </div>
+    <div class="section-title">📬 Recent Important Emails</div>
+    ${important.length ? important.map(e => `
+      <div class="email-item">
+        <div class="from">${escapeHtml(e.from.split('<')[0].trim() || e.from)}</div>
+        <div class="subject">${escapeHtml(e.subject)}</div>
+        <div class="snippet">${escapeHtml(e.snippet)}</div>
+      </div>
+    `).join('') : '<p style="color:#9ca3af;font-size:0.85rem;padding:0.5rem 0">No important emails found.</p>'}
+    <div class="section-title" style="margin-top:0.5rem">📊 Total scanned: ${emails.length} emails</div>
+  `;
+
+  document.getElementById('summary-content').innerHTML = html;
+  state.summaryLoaded = true;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────
+function renderActions() {
+  const emails    = state.emails;
+  const replyKw   = ['can you', 'please', 'kindly', 'let me know', 'waiting', 'confirm', 'response', 'reply', 'invitation', 'interview', 'meeting', 'schedule', 'attend'];
+  const urgentKw  = ['urgent', 'asap', 'immediately', 'today', 'deadline', 'expires', 'otp', 'verification', 'action required', 'due'];
+  const promoKw   = ['unsubscribe', 'newsletter', 'no-reply', 'noreply', 'marketing', 'offers', 'deals', 'sale'];
+
+  const needsReply  = emails.filter(e => replyKw.some(k => `${e.subject} ${e.snippet}`.toLowerCase().includes(k))).slice(0, 5);
+  const urgent      = emails.filter(e => urgentKw.some(k => `${e.subject} ${e.snippet}`.toLowerCase().includes(k))).slice(0, 5);
+  const promotions  = emails.filter(e => promoKw.some(k => `${e.from} ${e.subject}`.toLowerCase().includes(k))).slice(0, 5);
+
+  const cardHtml = (e, type) => `
+    <div class="action-card">
+      <h4>${escapeHtml(e.subject || '(No subject)')}</h4>
+      <div class="meta">From: ${escapeHtml(e.from.split('<')[0].trim())}</div>
+      <div class="action-buttons">
+        ${type !== 'promo' ? `<button class="btn-sm btn-draft" onclick="draftReply('${encodeURIComponent(JSON.stringify(e))}')">✍️ Draft Reply</button>` : ''}
+        ${type === 'promo' ? `<button class="btn-sm btn-unsub" onclick="copyUnsub('${escapeHtml(e.from)}')">🚫 Copy Unsubscribe</button>` : ''}
+      </div>
+    </div>
+  `;
+
+  const html = `
+    ${needsReply.length ? `<div class="section-title">📬 Needs a Reply (${needsReply.length})</div>${needsReply.map(e => cardHtml(e, 'reply')).join('')}` : ''}
+    ${urgent.length ? `<div class="section-title">🚨 Urgent (${urgent.length})</div>${urgent.map(e => cardHtml(e, 'urgent')).join('')}` : ''}
+    ${promotions.length ? `<div class="section-title">🚫 Unsubscribe Suggestions (${promotions.length})</div>${promotions.map(e => cardHtml(e, 'promo')).join('')}` : ''}
+    ${!needsReply.length && !urgent.length && !promotions.length ? '<div class="loading-state"><p>✅ Your inbox looks clean!</p></div>' : ''}
+  `;
+
+  document.getElementById('actions-content').innerHTML = html;
+  state.actionsLoaded = true;
+}
+
+// ── Draft Reply ───────────────────────────────────────────────────────
+async function draftReply(encodedEmail) {
+  const email = JSON.parse(decodeURIComponent(encodedEmail));
+  showOverlay('Drafting your reply...');
+
+  const result = await msg({
+    type:         'DRAFT_REPLY',
+    emailFrom:    email.from,
+    emailSubject: email.subject,
+    emailSnippet: email.snippet,
+    userName:     state.userInfo?.name || 'there',
+  });
+
+  hideOverlay();
+  if (result.success) showDraftModal(result.draft, email.subject);
+  else alert('Could not generate draft. Please try again.');
+}
+
+function showDraftModal(draft, subject) {
+  const modal = document.createElement('div');
+  modal.className = 'draft-modal';
+  modal.innerHTML = `
+    <div class="draft-modal-content">
+      <h4>✍️ Draft Reply — ${escapeHtml(subject)}</h4>
+      <textarea class="draft-textarea">${escapeHtml(draft)}</textarea>
+      <div class="draft-actions">
+        <button class="btn-copy" onclick="copyDraft(this)">📋 Copy to Clipboard</button>
+        <button class="btn-close-modal" onclick="this.closest('.draft-modal').remove()">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function copyDraft(btn) {
+  const text = btn.closest('.draft-modal-content').querySelector('.draft-textarea').value;
+  navigator.clipboard.writeText(text).then(() => { btn.textContent = '✅ Copied!'; });
+}
+
+function copyUnsub(from) {
+  navigator.clipboard.writeText(`Please unsubscribe me from your mailing list. From: ${from}`).then(() => {
+    alert('Copied! Paste this into a reply to unsubscribe.');
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function msg(data) {
+  return chrome.runtime.sendMessage(data);
+}
+
+function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+function showOverlay(text) {
+  document.getElementById('loading-text').textContent = text;
+  show('loading-overlay');
+}
+function hideOverlay() { hide('loading-overlay'); }
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
