@@ -1,20 +1,27 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel
 from groq import Groq
 import os
-from typing import Optional
 
 app = FastAPI(title="Email Cleaner AI Backend")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
+# ── Force CORS on every response including preflight ──────────────────
+@app.middleware("http")
+async def cors_middleware(request: Request, call_next):
+    if request.method == "OPTIONS":
+        response = Response()
+        response.headers["Access-Control-Allow-Origin"]  = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Max-Age"]       = "86400"
+        return response
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
 
 def client():
     return Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -71,11 +78,11 @@ Guidelines:
     messages.append({"role": "user", "content": req.query})
 
     try:
-        resp  = client().chat.completions.create(
-            model      = "llama-3.1-8b-instant",
-            messages   = messages,
-            max_tokens = 500,
-            temperature= 0.5,
+        resp = client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages,
+            max_tokens=500,
+            temperature=0.5,
         )
         return {"reply": resp.choices[0].message.content.strip()}
     except Exception as e:
@@ -100,11 +107,11 @@ Rules:
 - Return ONLY the email body, no subject line"""
 
     try:
-        resp  = client().chat.completions.create(
-            model      = "llama-3.1-8b-instant",
-            messages   = [{"role": "user", "content": prompt}],
-            max_tokens = 350,
-            temperature= 0.6,
+        resp = client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.6,
         )
         return {"draft": resp.choices[0].message.content.strip()}
     except Exception as e:
@@ -126,11 +133,11 @@ Format:
 Be concise — max 10 words per bullet."""
 
     try:
-        resp  = client().chat.completions.create(
-            model      = "llama-3.1-8b-instant",
-            messages   = [{"role": "user", "content": prompt}],
-            max_tokens = 200,
-            temperature= 0.4,
+        resp = client().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.4,
         )
         return {"summary": resp.choices[0].message.content.strip()}
     except Exception as e:
