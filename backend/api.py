@@ -142,3 +142,4 @@ Be concise — max 10 words per bullet."""
         return {"summary": resp.choices[0].message.content.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+# trigger redeploy
