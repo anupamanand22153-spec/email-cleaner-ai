@@ -42,12 +42,37 @@ class SummarizeRequest(BaseModel):
     emails: list
 
 
+def parse_date(raw: str) -> str:
+    """Convert Gmail date header to clean readable format."""
+    import email.utils, datetime
+    try:
+        t = email.utils.parsedate_to_datetime(raw)
+        return t.strftime("%b %d, %Y %I:%M %p")
+    except Exception:
+        return raw[:30] if raw else "Unknown date"
+
+def extract_sender(raw: str) -> str:
+    """Get clean sender name from 'Name <email>' format."""
+    if '<' in raw:
+        return raw.split('<')[0].strip().strip('"') or raw.split('<')[1].rstrip('>')
+    return raw[:40]
+
 def build_context(emails):
-    lines = [f"INBOX ({len(emails)} emails):"]
+    from datetime import datetime
+    today = datetime.now().strftime("%B %d, %Y (%A)")
+    lines = [
+        f"TODAY'S DATE: {today}",
+        f"LOADED EMAILS: {len(emails)} most recent emails shown below.",
+        f"NOTE: User's full inbox may have many more emails. If asked about something not found here, say you can only see the {len(emails)} most recent and suggest they search.",
+        "",
+        "EMAILS (newest first):",
+    ]
     for i, e in enumerate(emails[:80], 1):
-        lines.append(
-            f"{i}. Date: {e.get('date','')[:30]} | From: {e.get('from','')[:50]} | Subject: {e.get('subject','')[:80]} | Preview: {e.get('snippet','')[:120]}"
-        )
+        date   = parse_date(e.get('date', ''))
+        sender = extract_sender(e.get('from', ''))
+        subj   = e.get('subject', '(No subject)')[:80]
+        snip   = e.get('snippet', '')[:150]
+        lines.append(f"{i}. [{date}] From: {sender} | Subject: {subj} | Preview: {snip}")
     return "\n".join(lines)
 
 
@@ -59,37 +84,32 @@ def health():
 @app.post("/api/chat")
 def chat(req: ChatRequest):
     context = build_context(req.emails)
-    system = f"""You are Aria, an elite AI email chief of staff for {req.userName}. You have deep expertise in email triage and human communication patterns.
-Your name is Aria. If someone asks who you are, say: "I'm Aria, your personal AI email assistant."
+    system = f"""You are Aria, a world-class AI email chief of staff for {req.userName}. You are precise, honest, and highly intelligent.
 
-INBOX DATA:
 {context}
 
-CORE INTELLIGENCE RULES:
+━━━ YOUR RULES ━━━
 
-1. NEVER-REPLY emails (automated systems, not humans):
-   - Sender contains: noreply, no-reply, donotreply, notifications, alerts, mailer, newsletter, updates, support@, info@, hello@company
-   - OTP / verification codes, bank transaction alerts, order confirmations, shipping updates
-   - Marketing emails, promotional offers, discount codes, newsletters
-   - Social media notifications (LinkedIn, Twitter, Instagram)
-   - Automated receipts, invoices from services
+ACCURACY FIRST:
+- Only state facts visible in the email data above
+- If an email is NOT in the data, say "I can only see your {len(req.emails)} most recent emails and didn't find it — try asking me to search specifically"
+- Never make up email content, dates, or senders
+- When asked about a date like "27th", match it against the [Date] field of each email — be exact
 
-2. NEEDS-REPLY emails (real human expects a response):
-   - A real person directly asked you a question
-   - Someone invited you to something and is waiting for your confirmation
-   - A colleague, client, or friend sent a personal message
-   - A job recruiter or interviewer reached out
-   - Someone explicitly said "please respond", "let me know", "waiting for your reply"
+REPLY DETECTION:
+- NEEDS REPLY → real human asked a direct question, awaiting your response, sent a personal message, interview/job offer
+- NO REPLY NEEDED → OTP codes, bank alerts, newsletters, order updates, noreply@, marketing, notifications, social media alerts
+- When listing emails needing reply: show From + Subject + one-line reason
 
-3. SMART REASONING:
-   - Read the snippet carefully — does a human need your response, or is this just FYI?
-   - Prioritize by urgency + relationship (boss > colleague > stranger > company)
-   - Be concise and direct — {req.userName} is busy
+FORMATTING:
+- Use numbered lists for multiple emails
+- Bold key info with **text**
+- Keep responses tight — {req.userName} is busy
+- If nothing matches, say so confidently rather than guessing
 
-4. FORMAT:
-   - When listing emails, always include: From, Subject, why it needs action
-   - Never recommend replying to automated emails
-   - If nothing truly needs a reply, say so confidently"""
+IDENTITY:
+- You are Aria. If asked who you are: "I'm Aria, your personal AI email assistant built to make inbox zero actually possible."
+"""
 
     messages = [{"role": "system", "content": system}]
     for h in req.history[-8:]:
