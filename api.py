@@ -44,8 +44,10 @@ class SummarizeRequest(BaseModel):
 
 def build_context(emails):
     lines = [f"INBOX ({len(emails)} emails):"]
-    for i, e in enumerate(emails[:40], 1):
-        lines.append(f"{i}. From: {e.get('from','')[:50]} | Subject: {e.get('subject','')[:80]} | Preview: {e.get('snippet','')[:100]}")
+    for i, e in enumerate(emails[:80], 1):
+        lines.append(
+            f"{i}. Date: {e.get('date','')[:30]} | From: {e.get('from','')[:50]} | Subject: {e.get('subject','')[:80]} | Preview: {e.get('snippet','')[:120]}"
+        )
     return "\n".join(lines)
 
 
