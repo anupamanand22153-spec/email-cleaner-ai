@@ -1,6 +1,6 @@
 // ── Config ────────────────────────────────────────────────────────────
 const CLIENT_ID   = '486540453340-0sufvj4rtse805s7e3h7v4kmdumdq7sf.apps.googleusercontent.com';
-const BACKEND_URL = 'https://email-cleaner-ai-production-ae95.up.railway.app';
+const BACKEND_URL = 'https://email-cleaner-ai.onrender.com';
 const SCOPES      = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -31,9 +31,17 @@ async function handleMessage(message) {
 
     case 'FETCH_EMAILS': {
       const { token } = await chrome.storage.local.get('token');
-      if (!token) throw new Error('Not authenticated');
-      const emails = await fetchEmails(token, message.maxResults || 50);
-      return { success: true, emails };
+      if (!token) return { success: false, error: 'TOKEN_EXPIRED' };
+      try {
+        const emails = await fetchEmails(token);
+        return { success: true, emails };
+      } catch (err) {
+        if (err.message === 'TOKEN_EXPIRED') {
+          await chrome.storage.local.clear();
+          return { success: false, error: 'TOKEN_EXPIRED' };
+        }
+        return { success: false, error: err.message };
+      }
     }
 
     case 'CHAT': {
@@ -61,6 +69,13 @@ async function handleMessage(message) {
         emails: message.emails,
       });
       return { success: true, summary: result.summary };
+    }
+
+    case 'SEARCH_EMAILS': {
+      const { token: searchToken } = await chrome.storage.local.get('token');
+      if (!searchToken) throw new Error('Not authenticated');
+      const { emails: found, gmailQuery } = await searchEmails(searchToken, message.query);
+      return { success: true, emails: found, gmailQuery };
     }
 
     case 'SIGN_OUT': {
@@ -103,15 +118,50 @@ async function getUserInfo(token) {
 }
 
 // ── Gmail API ─────────────────────────────────────────────────────────
-async function fetchEmails(token, maxResults = 50) {
-  const listRes = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&labelIds=INBOX`,
+async function fetchEmails(token) {
+  const queries = [
+    'in:inbox',
+    'in:inbox category:promotions',
+    'in:inbox category:social',
+    'in:inbox category:updates',
+  ];
+
+  let allMessages = [];
+
+  // Check token validity first with a single fast request
+  const testRes = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=1&labelIds=INBOX`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
-  const list     = await listRes.json();
-  const messages = (list.messages || []).slice(0, 40);
+  if (testRes.status === 401) throw new Error('TOKEN_EXPIRED');
 
-  const emails = await Promise.all(messages.map(m => fetchEmailDetail(token, m.id)));
+  try {
+    const results = await Promise.all(queries.map(q =>
+      fetch(`https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=25&q=${encodeURIComponent(q)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(r => r.json()).then(d => d.messages || []).catch(() => [])
+    ));
+
+    const seen = new Set();
+    for (const batch of results) {
+      for (const m of batch) {
+        if (!seen.has(m.id)) { seen.add(m.id); allMessages.push(m); }
+      }
+    }
+  } catch (_) {}
+
+  // Fallback: simple inbox fetch if queries returned nothing
+  if (allMessages.length === 0) {
+    const res = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=50&labelIds=INBOX`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (res.status === 401) throw new Error('TOKEN_EXPIRED');
+    const data = await res.json();
+    allMessages = data.messages || [];
+  }
+
+  const emails = await Promise.all(allMessages.slice(0, 80).map(m => fetchEmailDetail(token, m.id)));
   return emails.filter(Boolean);
 }
 
@@ -127,6 +177,108 @@ async function fetchEmailDetail(token, id) {
   } catch {
     return null;
   }
+}
+
+// ── Smart Gmail Query Builder ─────────────────────────────────────────
+function buildGmailQuery(userQuery) {
+  const q = userQuery.toLowerCase();
+  const parts = [];
+  const now = new Date();
+
+  // ── Time-based filters (check FIRST, most specific) ──
+  const last24  = q.match(/last\s+24\s+hours?/);
+  const lastNH  = q.match(/last\s+(\d+)\s+hours?/);
+  const lastND  = q.match(/last\s+(\d+)\s+days?/);
+  const lastW   = q.match(/last\s+week/);
+  const lastM   = q.match(/last\s+month/);
+  const todayM  = q.includes('today');
+  const yesterM = q.includes('yesterday');
+
+  if (last24 || (lastNH && parseInt(lastNH[1]) <= 24)) {
+    parts.push('newer_than:1d');
+  } else if (lastNH) {
+    const h = parseInt(lastNH[1]);
+    const d = Math.ceil(h / 24);
+    parts.push(`newer_than:${d}d`);
+  } else if (lastND) {
+    parts.push(`newer_than:${parseInt(lastND[1])}d`);
+  } else if (lastW) {
+    parts.push('newer_than:7d');
+  } else if (lastM) {
+    parts.push('newer_than:30d');
+  } else if (todayM) {
+    parts.push(`after:${fmt(now)} before:${fmt(new Date(now.getTime() + 86400000))}`);
+  } else if (yesterM) {
+    parts.push(`after:${fmt(new Date(now.getTime() - 86400000))} before:${fmt(now)}`);
+  } else {
+    // Match specific dates: "27th", "june 27", "27 june", "27/6"
+    const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    let day = null, month = now.getMonth(), year = now.getFullYear(), monthFound = false;
+
+    for (let i = 0; i < monthNames.length; i++) {
+      if (q.includes(monthNames[i])) { month = i; monthFound = true; break; }
+    }
+    const yearMatch = q.match(/\b(202\d)\b/);
+    if (yearMatch) year = parseInt(yearMatch[1]);
+
+    // avoid matching hour/minute numbers as day
+    const dayMatch = q.match(/\b([1-9]|[12]\d|3[01])(?:st|nd|rd|th)?\b/);
+    if (dayMatch) day = parseInt(dayMatch[1]);
+
+    if (day) {
+      const from = new Date(year, month, day);
+      const to   = new Date(year, month, day + 1);
+      parts.push(`after:${fmt(from)} before:${fmt(to)}`);
+    }
+  }
+
+  // ── Sender parsing ──
+  const fromPats = [
+    /\bfrom\s+([a-zA-Z0-9._-]+)/,
+    /e-?mails?\s+(?:from|by|sent\s+by)\s+([a-zA-Z0-9._-]+)/,
+    /(?:sent|received)\s+(?:from|by)\s+([a-zA-Z0-9._-]+)/,
+    /([a-zA-Z0-9._-]+)(?:'s?)?\s+e?-?mails?/,
+  ];
+  for (const pat of fromPats) {
+    const m = q.match(pat);
+    if (m && m[1].length > 2 && !['the','any','all','my','last','this'].includes(m[1])) {
+      parts.push(`from:${m[1]}`);
+      break;
+    }
+  }
+
+  // ── Flags ──
+  if (q.includes('unread'))                              parts.push('is:unread');
+  if (q.match(/attach(ment|ed)/))                        parts.push('has:attachment');
+  if (q.includes('starred'))                             parts.push('is:starred');
+  if (q.includes('important'))                           parts.push('is:important');
+  if (q.includes('spam'))                                parts.push('in:spam');
+  if (q.match(/promo(tion)?s?/))                         parts.push('category:promotions');
+  if (q.includes('social'))                              parts.push('category:social');
+  if (q.includes('unsubscribe') || q.includes('newsletter')) parts.push('category:promotions');
+
+  // ── Subject keyword ──
+  const subjM = q.match(/subject[:\s]+["']?([^"'?]+)["']?/);
+  if (subjM) parts.push(`subject:(${subjM[1].trim()})`);
+
+  return parts.length > 0 ? parts.join(' ') : userQuery;
+}
+
+function fmt(date) {
+  return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
+}
+
+// ── Gmail Search ──────────────────────────────────────────────────────
+async function searchEmails(token, query) {
+  const gmailQuery = buildGmailQuery(query);
+  const res = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=30&q=${encodeURIComponent(gmailQuery)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const list = await res.json();
+  const messages = (list.messages || []).slice(0, 30);
+  const emails = await Promise.all(messages.map(m => fetchEmailDetail(token, m.id)));
+  return { emails: emails.filter(Boolean), gmailQuery };
 }
 
 // ── Backend API ───────────────────────────────────────────────────────

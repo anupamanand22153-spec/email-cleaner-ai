@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from groq import Groq
+from datetime import datetime
+import email.utils
 import os
 
 app = FastAPI()
@@ -27,10 +29,13 @@ def groq_client():
 
 
 class ChatRequest(BaseModel):
-    query:    str
-    emails:   list
-    history:  list = []
-    userName: str  = "there"
+    query:         str
+    emails:        list
+    history:       list = []
+    userName:      str  = "there"
+    mode:          str  = "general"   # "general" | "search"
+    gmailQuery:    str  = ""
+    searchCount:   int  = 0
 
 class DraftReplyRequest(BaseModel):
     emailFrom:    str
@@ -42,40 +47,32 @@ class SummarizeRequest(BaseModel):
     emails: list
 
 
+# ── Helpers ───────────────────────────────────────────────────────────
 def parse_date(raw: str) -> str:
-    """Convert Gmail date header to clean readable format."""
-    import email.utils, datetime
     try:
         t = email.utils.parsedate_to_datetime(raw)
         return t.strftime("%b %d, %Y %I:%M %p")
     except Exception:
-        return raw[:30] if raw else "Unknown date"
+        return raw[:30] if raw else "Unknown"
 
-def extract_sender(raw: str) -> str:
-    """Get clean sender name from 'Name <email>' format."""
+def clean_sender(raw: str) -> str:
     if '<' in raw:
-        return raw.split('<')[0].strip().strip('"') or raw.split('<')[1].rstrip('>')
-    return raw[:40]
+        name = raw.split('<')[0].strip().strip('"')
+        return name or raw.split('<')[1].rstrip('>')
+    return raw[:50]
 
-def build_context(emails):
-    from datetime import datetime
-    today = datetime.now().strftime("%B %d, %Y (%A)")
-    lines = [
-        f"TODAY'S DATE: {today}",
-        f"LOADED EMAILS: {len(emails)} most recent emails shown below.",
-        f"NOTE: User's full inbox may have many more emails. If asked about something not found here, say you can only see the {len(emails)} most recent and suggest they search.",
-        "",
-        "EMAILS (newest first):",
-    ]
+def build_email_list(emails: list) -> str:
+    lines = []
     for i, e in enumerate(emails[:80], 1):
         date   = parse_date(e.get('date', ''))
-        sender = extract_sender(e.get('from', ''))
-        subj   = e.get('subject', '(No subject)')[:80]
-        snip   = e.get('snippet', '')[:150]
-        lines.append(f"{i}. [{date}] From: {sender} | Subject: {subj} | Preview: {snip}")
+        sender = clean_sender(e.get('from', ''))
+        subj   = e.get('subject', '(No subject)')[:100]
+        snip   = e.get('snippet', '')[:200]
+        lines.append(f"{i}. [{date}] From: {sender} | Subject: {subj}\n   Preview: {snip}")
     return "\n".join(lines)
 
 
+# ── Endpoints ─────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -83,45 +80,68 @@ def health():
 
 @app.post("/api/chat")
 def chat(req: ChatRequest):
-    context = build_context(req.emails)
-    system = f"""You are Aria, a world-class AI email chief of staff for {req.userName}. You are precise, honest, and highly intelligent.
+    today = datetime.now().strftime("%B %d, %Y (%A)")
+    email_list = build_email_list(req.emails)
 
-{context}
+    if req.mode == "search":
+        # Search mode: AI only sees the search results
+        if len(req.emails) == 0:
+            # Gmail returned nothing
+            system = f"""You are Aria, the AI email assistant for {req.userName}. Today is {today}.
 
-━━━ YOUR RULES ━━━
+A Gmail search was performed for: "{req.gmailQuery}"
+Result: 0 emails found.
 
-ACCURACY FIRST:
-- Only state facts visible in the email data above
-- If an email is NOT in the data, say "I can only see your {len(req.emails)} most recent emails and didn't find it — try asking me to search specifically"
-- Never make up email content, dates, or senders
-- When asked about a date like "27th", match it against the [Date] field of each email — be exact
+Tell the user clearly that no emails were found matching their query.
+Suggest they check spelling, try a broader time range, or check a different Gmail tab."""
+        else:
+            system = f"""You are Aria, the AI email assistant for {req.userName}. Today is {today}.
 
-REPLY DETECTION:
-- NEEDS REPLY → real human asked a direct question, awaiting your response, sent a personal message, interview/job offer
-- NO REPLY NEEDED → OTP codes, bank alerts, newsletters, order updates, noreply@, marketing, notifications, social media alerts
-- When listing emails needing reply: show From + Subject + one-line reason
+A Gmail search for "{req.gmailQuery}" returned {len(req.emails)} email(s).
+These are the EXACT matching emails from Gmail — answer ONLY based on these:
+
+{email_list}
+
+Rules:
+- These ARE the real results. Do not say you "can't find" them.
+- List them clearly with sender, subject, and date
+- Be concise and direct"""
+    else:
+        # General mode: answer from pre-loaded emails
+        system = f"""You are Aria, a world-class AI email chief of staff for {req.userName}.
+Today is {today}. You have access to {req.userName}'s {len(req.emails)} most recent emails.
+
+{email_list}
+
+━━━ RULES ━━━
+ACCURACY:
+- Only state facts visible above. Never invent email content.
+- For date queries: match against the [date] shown for each email precisely
+- If something isn't in the list, say "I can see your {len(req.emails)} most recent emails and didn't find it — try asking me to search by sender name or date"
+
+REPLY DETECTION (when asked which emails need a reply):
+- NEEDS REPLY: real human asking a question, awaiting confirmation, personal message, job/interview
+- NO REPLY: OTP, bank alerts, newsletters, order updates, noreply@, marketing, notifications
+- Always show: sender + subject + one-line reason
 
 FORMATTING:
-- Use numbered lists for multiple emails
-- Bold key info with **text**
-- Keep responses tight — {req.userName} is busy
-- If nothing matches, say so confidently rather than guessing
+- Numbered lists for multiple items
+- **Bold** key info
+- Be concise — {req.userName} is busy
 
-IDENTITY:
-- You are Aria. If asked who you are: "I'm Aria, your personal AI email assistant built to make inbox zero actually possible."
-"""
+IDENTITY: You are Aria. "I'm Aria, your personal AI email assistant built to make inbox zero actually possible." """
 
     messages = [{"role": "system", "content": system}]
-    for h in req.history[-8:]:
-        messages.append({"role": h.get("role","user"), "content": h.get("content","")})
+    for h in req.history[-6:]:
+        messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
     messages.append({"role": "user", "content": req.query})
 
     try:
         resp = groq_client().chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            max_tokens=500,
-            temperature=0.5,
+            max_tokens=600,
+            temperature=0.3,
         )
         return {"reply": resp.choices[0].message.content.strip()}
     except Exception as e:
@@ -130,27 +150,23 @@ IDENTITY:
 
 @app.post("/api/draft-reply")
 def draft_reply(req: DraftReplyRequest):
-    prompt = f"""You are writing an email reply on behalf of {req.userName}. Write like a real human, not a corporate robot.
+    prompt = f"""Write a natural email reply from {req.userName}.
 
 Original email:
 - From: {req.emailFrom}
 - Subject: {req.emailSubject}
 - Content: {req.emailSnippet}
 
-Rules:
-- Sound natural and warm, like how {req.userName} would actually write
-- Be concise — 3-5 sentences maximum
-- Address the specific question or request in the email
-- Do NOT use filler phrases like "I hope this email finds you well" or "Please don't hesitate"
-- Do NOT add placeholders like [Your Name] — sign off as {req.userName}
-- Return ONLY the email body text, nothing else"""
+Write like a real human. 3-5 sentences max. No filler phrases like "I hope this email finds you well."
+Do NOT use placeholders. Sign off as {req.userName}.
+Return ONLY the email body."""
 
     try:
         resp = groq_client().chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=350,
-            temperature=0.6,
+            temperature=0.5,
         )
         return {"draft": resp.choices[0].message.content.strip()}
     except Exception as e:
@@ -159,24 +175,24 @@ Rules:
 
 @app.post("/api/summarize")
 def summarize(req: SummarizeRequest):
-    context = build_context(req.emails)
-    prompt = f"""Give a brief 3-bullet summary of this inbox. Focus on what's important.
+    email_list = build_email_list(req.emails)
+    prompt = f"""Summarise this inbox in 3 bullets. Focus on what actually matters.
 
-{context}
+{email_list}
 
 Format:
-• [Key point 1]
-• [Key point 2]
-• [Key point 3]
+• [Key point]
+• [Key point]
+• [Key point]
 
-Be concise — max 10 words per bullet."""
+Max 12 words per bullet. Be specific, not generic."""
 
     try:
         resp = groq_client().chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
-            temperature=0.4,
+            temperature=0.3,
         )
         return {"summary": resp.choices[0].message.content.strip()}
     except Exception as e:

@@ -40,14 +40,45 @@ document.getElementById('connect-btn').addEventListener('click', async () => {
 // ── Load Emails ───────────────────────────────────────────────────────
 async function loadEmails() {
   document.getElementById('header-user').textContent = state.userInfo?.email || '';
+  const countEl = document.getElementById('email-count');
+  if (countEl) countEl.textContent = 'Reading inbox...';
   showOverlay('Reading your inbox...');
-  const result = await msg({ type: 'FETCH_EMAILS', maxResults: 50 });
+  const result = await msg({ type: 'FETCH_EMAILS' });
   hideOverlay();
   if (result.success) {
     state.emails = result.emails;
+    if (countEl) countEl.textContent = `${result.emails.length} emails loaded`;
     renderSummary();
     renderActions();
+  } else if (result.error === 'TOKEN_EXPIRED') {
+    if (countEl) { countEl.textContent = 'Session expired'; countEl.style.color = '#f85149'; }
+    showReconnectBanner();
+  } else {
+    if (countEl) countEl.textContent = 'Could not load emails';
   }
+}
+
+function showReconnectBanner() {
+  const existing = document.getElementById('reconnect-banner');
+  if (existing) return;
+  const banner = document.createElement('div');
+  banner.id = 'reconnect-banner';
+  banner.className = 'reconnect-banner';
+  banner.innerHTML = `
+    <span>⚠️ Session expired</span>
+    <button id="reconnect-btn">Reconnect Gmail</button>
+  `;
+  document.getElementById('app-screen').prepend(banner);
+  document.getElementById('reconnect-btn').addEventListener('click', async () => {
+    banner.remove();
+    showOverlay('Reconnecting...');
+    const result = await msg({ type: 'AUTH' });
+    hideOverlay();
+    if (result.success) {
+      state.userInfo = result.userInfo;
+      loadEmails();
+    }
+  });
 }
 
 // ── Events ────────────────────────────────────────────────────────────
@@ -106,19 +137,82 @@ async function sendChat() {
   appendMessage('user', query);
   state.chatHistory.push({ role: 'user', content: query });
 
-  const thinkingId = appendMessage('ai', '⟳ Thinking...');
+  const thinkingId = appendMessage('ai', '__THINKING__');
+  startThinkingAnimation(thinkingId);
 
-  const result = await msg({
-    type:     'CHAT',
-    query,
-    emails:   state.emails.slice(0, 30),
-    history:  state.chatHistory.slice(-8),
-    userName: state.userInfo?.name || 'there',
-  });
+  try {
+    let chatMode = 'general';
+    let chatEmails = [...state.emails];
+    let gmailQuery = '';
+    let searchCount = 0;
 
-  const reply = result.success ? result.reply : 'Sorry, something went wrong. Please try again.';
-  updateMessage(thinkingId, reply);
-  state.chatHistory.push({ role: 'assistant', content: reply });
+    // Always search Gmail with the user's query
+    try {
+      const searchResult = await msg({ type: 'SEARCH_EMAILS', query });
+      if (searchResult?.success) {
+        gmailQuery   = searchResult.gmailQuery || '';
+        searchCount  = searchResult.emails?.length || 0;
+        // Switch to search mode when query is specific (not generic chat)
+        const isSpecific = gmailQuery !== query; // builder transformed the query
+        if (isSpecific) {
+          chatMode   = 'search';
+          chatEmails = searchResult.emails || [];
+        } else if (searchResult.emails?.length) {
+          // merge for general queries
+          const seen = new Set(chatEmails.map(e => e.id));
+          for (const e of searchResult.emails) {
+            if (!seen.has(e.id)) chatEmails.push(e);
+          }
+        }
+      }
+    } catch (_) {}
+
+    const result = await msg({
+      type:        'CHAT',
+      query,
+      emails:      chatEmails.slice(0, 80),
+      history:     state.chatHistory.slice(-8),
+      userName:    state.userInfo?.name || 'there',
+      mode:        chatMode,
+      gmailQuery,
+      searchCount,
+    });
+
+    const reply = result?.success ? result.reply : 'Sorry, something went wrong. Please try again.';
+    updateMessage(thinkingId, reply);
+    state.chatHistory.push({ role: 'assistant', content: reply });
+  } catch (err) {
+    updateMessage(thinkingId, 'Sorry, something went wrong. Please try again.');
+  } finally {
+    stopThinkingAnimation();
+  }
+}
+
+// ── Thinking animation ────────────────────────────────────────
+let _thinkingTimer = null;
+const THINKING_STEPS = [
+  'Thinking',
+  'Reading your inbox',
+  'Searching emails',
+  'Analyzing',
+  'Almost there',
+];
+
+function startThinkingAnimation(id) {
+  let step = 0; let dots = 0;
+  const el = document.getElementById(id);
+  if (!el) return;
+  _thinkingTimer = setInterval(() => {
+    dots = (dots + 1) % 4;
+    const label = THINKING_STEPS[step % THINKING_STEPS.length];
+    const dotStr = '.'.repeat(dots);
+    if (el) el.innerHTML = `<div class="thinking-wrap"><span class="thinking-spinner"></span><span class="thinking-label">${label}<span class="thinking-dots">${dotStr}</span></span></div>`;
+    if (dots === 3) step++;
+  }, 400);
+}
+
+function stopThinkingAnimation() {
+  if (_thinkingTimer) { clearInterval(_thinkingTimer); _thinkingTimer = null; }
 }
 
 function appendMessage(role, text) {
@@ -126,7 +220,14 @@ function appendMessage(role, text) {
   const messages = document.getElementById('chat-messages');
   const div      = document.createElement('div');
   div.className  = `${role === 'ai' ? 'ai' : 'user'}-message`;
-  div.innerHTML  = `<div class="message-bubble ${role}" id="${id}">${escapeHtml(text)}</div>`;
+  if (role === 'ai') {
+    const content = text === '__THINKING__'
+      ? `<div class="thinking-wrap"><span class="thinking-spinner"></span><span class="thinking-label">Thinking<span class="thinking-dots">...</span></span></div>`
+      : renderMarkdown(text);
+    div.innerHTML = `<div class="ai-avatar"><svg width="14" height="14" viewBox="0 0 36 36" fill="none"><rect x="4" y="9" width="28" height="20" rx="4" stroke="white" stroke-width="3" fill="none"/><path d="M4 13l14 9 14-9" stroke="white" stroke-width="3" stroke-linecap="round"/></svg></div><div class="message-bubble ai" id="${id}">${content}</div>`;
+  } else {
+    div.innerHTML = `<div class="message-bubble user" id="${id}">${escapeHtml(text)}</div>`;
+  }
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
   return id;
@@ -134,7 +235,7 @@ function appendMessage(role, text) {
 
 function updateMessage(id, text) {
   const el = document.getElementById(id);
-  if (el) el.textContent = text;
+  if (el) el.innerHTML = renderMarkdown(text);
   document.getElementById('chat-messages').scrollTop = 99999;
 }
 
@@ -278,4 +379,53 @@ function hideOverlay() { hide('loading-overlay'); }
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+
+  const lines = text.split('\n');
+  const out = [];
+  let inList = false;
+  let listType = null;
+
+  const closeList = () => {
+    if (inList) { out.push(listType === 'ol' ? '</ol>' : '</ul>'); inList = false; listType = null; }
+  };
+
+  const inlineFormat = (s) => s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
+
+  for (let raw of lines) {
+    const line = raw.trim();
+    if (!line) { closeList(); out.push('<div class="msg-spacer"></div>'); continue; }
+
+    // Numbered list  1. 2. 3.
+    const numMatch = line.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      if (!inList || listType !== 'ol') { closeList(); out.push('<ol class="msg-list">'); inList = true; listType = 'ol'; }
+      out.push(`<li>${inlineFormat(escapeHtml(numMatch[2]))}</li>`);
+      continue;
+    }
+
+    // Bullet list  • - *
+    const bulMatch = line.match(/^[•\-\*]\s+(.*)/);
+    if (bulMatch) {
+      if (!inList || listType !== 'ul') { closeList(); out.push('<ul class="msg-list">'); inList = true; listType = 'ul'; }
+      out.push(`<li>${inlineFormat(escapeHtml(bulMatch[1]))}</li>`);
+      continue;
+    }
+
+    // Heading  **Title:**  or  ### Title
+    const headMatch = line.match(/^#{1,3}\s+(.*)/);
+    if (headMatch) { closeList(); out.push(`<div class="msg-heading">${inlineFormat(escapeHtml(headMatch[1]))}</div>`); continue; }
+
+    closeList();
+    out.push(`<p class="msg-para">${inlineFormat(escapeHtml(line))}</p>`);
+  }
+
+  closeList();
+  return out.join('');
 }
