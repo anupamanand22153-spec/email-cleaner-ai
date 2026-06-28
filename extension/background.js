@@ -165,18 +165,44 @@ async function fetchEmails(token) {
   return emails.filter(Boolean);
 }
 
-async function fetchEmailDetail(token, id) {
+async function fetchEmailDetail(token, id, includeBody = false) {
   try {
-    const res  = await fetch(
-      `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From,Subject,Date`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const url = includeBody
+      ? `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`
+      : `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From,Subject,Date`;
+    const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
     const h    = (name) => (data.payload?.headers || []).find(h => h.name === name)?.value || '';
-    return { id: data.id, from: h('From'), subject: h('Subject'), date: h('Date'), snippet: data.snippet || '' };
+    const body = includeBody ? extractTextBody(data.payload) : '';
+    return {
+      id:      data.id,
+      from:    h('From'),
+      subject: h('Subject'),
+      date:    h('Date'),
+      snippet: body || data.snippet || '',
+    };
   } catch {
     return null;
   }
+}
+
+function extractTextBody(payload) {
+  if (!payload) return '';
+  const decode = (data) => {
+    try { return atob(data.replace(/-/g,'+').replace(/_/g,'/')); } catch { return ''; }
+  };
+  if (payload.body?.data) return decode(payload.body.data).slice(0, 600);
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body?.data)
+        return decode(part.body.data).slice(0, 600);
+    }
+    for (const part of payload.parts) {
+      const r = extractTextBody(part);
+      if (r) return r;
+    }
+  }
+  return '';
 }
 
 // ── Smart Gmail Query Builder ─────────────────────────────────────────
@@ -268,17 +294,39 @@ function fmt(date) {
   return `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
 }
 
+// ── Smart default query for common questions ──────────────────────────
+function getSmartQuery(userQuery) {
+  const q = userQuery.toLowerCase();
+  if (q.match(/needs?\s+repl|which\s+email.*reply|reply\s+needed/))
+    return { query: 'is:unread -category:promotions -from:noreply -from:no-reply', smart: true };
+  if (q.match(/unread/))
+    return { query: 'is:unread', smart: true };
+  if (q.match(/latest|newest|last\s+email|most\s+recent/))
+    return { query: 'in:inbox', smart: true };
+  if (q.match(/important/))
+    return { query: 'is:important', smart: true };
+  if (q.match(/attach/))
+    return { query: 'has:attachment in:inbox', smart: true };
+  if (q.match(/starred/))
+    return { query: 'is:starred', smart: true };
+  return { query: buildGmailQuery(userQuery), smart: false };
+}
+
 // ── Gmail Search ──────────────────────────────────────────────────────
 async function searchEmails(token, query) {
-  const gmailQuery = buildGmailQuery(query);
+  const { query: gmailQuery, smart } = getSmartQuery(query);
+  const builtQuery = smart ? gmailQuery : buildGmailQuery(query);
+  const finalQuery = builtQuery !== query ? builtQuery : gmailQuery;
+
   const res = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=30&q=${encodeURIComponent(gmailQuery)}`,
+    `https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=${encodeURIComponent(finalQuery)}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const list = await res.json();
-  const messages = (list.messages || []).slice(0, 30);
-  const emails = await Promise.all(messages.map(m => fetchEmailDetail(token, m.id)));
-  return { emails: emails.filter(Boolean), gmailQuery };
+  const messages = (list.messages || []).slice(0, 20);
+  // Fetch full body for search results so AI has complete context
+  const emails = await Promise.all(messages.map(m => fetchEmailDetail(token, m.id, true)));
+  return { emails: emails.filter(Boolean), gmailQuery: finalQuery };
 }
 
 // ── Backend API ───────────────────────────────────────────────────────

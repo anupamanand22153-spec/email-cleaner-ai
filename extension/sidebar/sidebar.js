@@ -152,17 +152,10 @@ async function sendChat() {
       if (searchResult?.success) {
         gmailQuery   = searchResult.gmailQuery || '';
         searchCount  = searchResult.emails?.length || 0;
-        // Switch to search mode when query is specific (not generic chat)
-        const isSpecific = gmailQuery !== query; // builder transformed the query
-        if (isSpecific) {
+        // Always use search mode — Gmail's results are more accurate than pre-loaded
+        if (gmailQuery) {
           chatMode   = 'search';
           chatEmails = searchResult.emails || [];
-        } else if (searchResult.emails?.length) {
-          // merge for general queries
-          const seen = new Set(chatEmails.map(e => e.id));
-          for (const e of searchResult.emails) {
-            if (!seen.has(e.id)) chatEmails.push(e);
-          }
         }
       }
     } catch (_) {}
